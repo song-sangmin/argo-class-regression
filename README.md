@@ -27,15 +27,6 @@ From any notebook with the environment `argocv-dev` activated, can run `import a
 May have to run `git config filter.nbstripout.clean "nbstripout --keep-output"`.
 
 
-
-<!-- ### Folder Directory
-
-- `scripts/` : code for analysis
-- `data/` : float, ship, and glider data as downloaded
-- `working-vars/` : calculated output variables from analysis
-- `images/` : final output figures
- -->
-
 ## Data Sources
 
 - Argo data were accessed with [Argopy](https://argopy.readthedocs.io/en/latest/) from the Jan 2025 GDAC
