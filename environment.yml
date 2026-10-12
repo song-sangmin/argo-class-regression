@@ -1,0 +1,35 @@
+name: argocv-dev
+channels:
+  - conda-forge
+dependencies:
+  - jupyterlab
+  - pip
+  - python=3.11
+  - sphinx
+  
+  - numpy
+  - scipy
+  - pandas
+  - xarray
+  - xhistogram
+  - netcdf4
+  - scikit-learn
+  - gsw
+  - argopy
+  - pyco2sys
+  - cartopy
+  - cmocean # palettes 
+  - matplotlib
+  - seaborn 
+  - nbstripout
+  - tqdm
+
+  - pip: 
+    - matplotlib-label-lines
+    - pyshp
+    - xgboost
+    - hatchling
+    - pre-commit # run `pre-commit install` in your repo
+    - solarpy
+
+    
