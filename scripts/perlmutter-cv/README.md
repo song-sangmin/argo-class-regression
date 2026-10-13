@@ -6,9 +6,9 @@ From terminal:
 ```
 cd /global/homes/s/sangsong/dask-cv-src
 
-sbatch -J RFR_full nested_cv.sbatch RFR rfr_full
-sbatch -J ERT_full nested_cv.sbatch ERT ert_full
-sbatch -J XGB_full -t 02:00:00 nested_cv.sbatch XGB xgb_full
+sbatch -J RFRcv10x5 nested_cv.sbatch RFR rfr_full
+sbatch -J ERTcv10x5 nested_cv.sbatch ERT ert_full
+sbatch -J XGBcv10x5 -t 02:00:00 nested_cv.sbatch XGB xgb_full
 ```
 
 Or debug with shorter version `sbatch -J RFR_test -q debug -t 00:10:00 nested_cv.sbatch RFR rfr_test --n-outer 2 --n-inner 2`
