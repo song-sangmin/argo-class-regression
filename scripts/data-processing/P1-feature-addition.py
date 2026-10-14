@@ -1,8 +1,7 @@
 
 # ======== internal 
-import crusoe.oceantools as mod_ocean
-import crusoe.argotools as mod_argo
-import crusoe.preprocessing as mod_prep
+import argoclare.oceantools as mod_ocean
+import argoclare.preprocessing as mod_prep
 
 
 

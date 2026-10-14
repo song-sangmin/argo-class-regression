@@ -1,16 +1,12 @@
+import logging
+import argopy
 from argopy import DataFetcher  # This is the class to work with Argo data
-from argopy import ArgoIndex  #  This is the class to work with Argo index
-from argopy import ArgoNVSReferenceTables  # This is the class to retrieve data from Argo reference tables
-from argopy import ArgoColors  # This is a class with usefull pre-defined colors
-from argopy.plot import scatter_map, scatter_plot  # This is a function to easily make maps 
 
 # Make a fresh start
-import argopy
 argopy.reset_options()
 argopy.clear_cache()
 argopy.set_options(cachedir='cache_bgc')
 
-import logging
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
 logging.getLogger("pyproj").setLevel(logging.ERROR)
 logging.getLogger("fsspec").setLevel(logging.ERROR)

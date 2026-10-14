@@ -1,17 +1,14 @@
 import os
+from importlib import reload
 from tqdm import tqdm
 import numpy                 as np
 import pandas                as pd
 import xarray                as xr
-from   datetime              import date, datetime, timedelta               
-import scipy
-import gsw
+from   datetime              import datetime
 
 # ======== internal 
-import crusoe.oceantools as mod_ocean
-import crusoe.argotools as mod_argo
-import crusoe.preprocessing as mod_prep
-import crplot.figtools as mod_plot
+import argoclare.oceantools as mod_ocean
+import argoclare.argotools as mod_argo
 
 
 # %% Import data saved from argopy-import.py 
@@ -45,8 +42,6 @@ datetag = datetime.now().strftime('%Y%m%d')
 # ===== Choose years to iterate over
 # yrlist = [str(x) for x in range(2014,2025)]
 yrlist = ['2021', '2023', '2024']
-
-from joblib import Parallel, delayed
 
 def process_argo_year(yr, save=False):
     print('===> Processing yr ' + yr)
