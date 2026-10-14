@@ -4,7 +4,7 @@ Batch version of dask-hyperparameter-tuning.ipynb. Instead of connecting to the
 scheduler from launch-dask-conda-cpu.sh, it starts a LocalCluster on the node
 Slurm allocated (64 workers x 2 threads by default, same as the interactive runs).
 
-Usage (normally called by nested_cv.sbatch):
+Usage (normally called by submit_nested_cv.sbatch):
     python run_dask_nested_cv.py RFR rfr_full
     python run_dask_nested_cv.py XGB xgb_full --run-name crusoe_XGB_platformCV_fullgrid10x5
 """
@@ -15,7 +15,7 @@ from datetime import datetime
 import pandas as pd
 from dask.distributed import LocalCluster, Client
 
-import procedures_inner
+import procedures_cv
 from tuning_grids import TUNING_GRIDS
 
 # ==== Standard run parameters =======
@@ -68,7 +68,7 @@ def main():
                       dashboard_address=None) as cluster, Client(cluster) as client:
         print(client)
         print('Starting dask training: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
-        procedures_inner.run_dask_nested_cv(client, trainval_data,
+        procedures_cv.run_dask_nested_cv(client, trainval_data,
                                             n_clusters, sea_ice_clusters,
                                             feat_list, var_predict,
                                             args.n_outer, args.n_inner,

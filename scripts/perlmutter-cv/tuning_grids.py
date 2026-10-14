@@ -1,7 +1,7 @@
 """Hyperparameter tuning grids for run_dask_nested_cv.py, selected by name.
 
 Add new grids here, then pass the key on the command line, e.g.
-    sbatch -J RFR_full nested_cv.sbatch RFR rfr_full
+    sbatch -J RFR_full submit_nested_cv.sbatch RFR rfr_full
 """
 
 TUNING_GRIDS = {

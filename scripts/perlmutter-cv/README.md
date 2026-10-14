@@ -6,15 +6,15 @@ From terminal:
 ```
 cd /global/homes/s/sangsong/dask-cv-src
 
-sbatch -J RFRcv10x5 nested_cv.sbatch RFR rfr_full
-sbatch -J ERTcv10x5 nested_cv.sbatch ERT ert_full
-sbatch -J XGBcv10x5 -t 02:00:00 nested_cv.sbatch XGB xgb_full
+sbatch -J RFRcv10x5 submit_nested_cv.sbatch RFR rfr_full
+sbatch -J ERTcv10x5 submit_nested_cv.sbatch ERT ert_full
+sbatch -J XGBcv10x5 -t 02:00:00 submit_nested_cv.sbatch XGB xgb_full
 ```
 
-Or debug with shorter version `sbatch -J RFR_test -q debug -t 00:10:00 nested_cv.sbatch RFR rfr_test --n-outer 2 --n-inner 2`
+Or debug with shorter version `sbatch -J RFR_test -q debug -t 00:10:00 submit_nested_cv.sbatch RFR rfr_test --n-outer 2 --n-inner 2`
 
 -J names the job and its log file
-Options before nested_cv.sbatch go to Slurm (-t, -q)
+Options before submit_nested_cv.sbatch go to Slurm (-t, -q)
 Anything after the grid name goes to the Python script (--run-name, --n-outer, --n-workers and so on). 
 
 
@@ -29,7 +29,7 @@ sacct -j <JOBID> --format=JobID,State,Elapsed              # after it finishes
 
 ## Time allocation
 
-A batch job lasts only as long as the nested_cv.sbatch script runs. Once the last line (echo "Finished: ...") runs, the job exits and Slurm frees the node and stops charging hours.
+A batch job lasts only as long as the submit_nested_cv.sbatch script runs. Once the last line (echo "Finished: ...") runs, the job exits and Slurm frees the node and stops charging hours.
 
     `run_dask_nested_cv` saves the results.
     The with LocalCluster(...) block in `run_dask_nested_cv.py` closes, which shuts down the Dask workers.

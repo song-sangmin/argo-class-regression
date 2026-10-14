@@ -10,16 +10,16 @@
 # Nested CV hyperparameter tuning for one algorithm + tuning grid on 1 CPU node.
 #
 # Usage (from /global/homes/s/sangsong/dask-cv-src):
-#   sbatch -J RFR_full nested_cv.sbatch RFR rfr_full
-#   sbatch -J XGB_full -t 02:00:00 nested_cv.sbatch XGB xgb_full
+#   sbatch -J RFR_full submit_nested_cv.sbatch RFR rfr_full
+#   sbatch -J XGB_full -t 02:00:00 submit_nested_cv.sbatch XGB xgb_full
 #
 # Anything after the grid name is passed on to run_dask_nested_cv.py, e.g. a quick test:
-#   sbatch -J RFR_test -q debug -t 00:10:00 nested_cv.sbatch RFR rfr_test --n-outer 2 --n-inner 2
+#   sbatch -J RFR_test -q debug -t 00:10:00 submit_nested_cv.sbatch RFR rfr_test --n-outer 2 --n-inner 2
 
 set -eo pipefail
 
 if [ $# -lt 2 ]; then
-    echo "Usage: sbatch [sbatch options] nested_cv.sbatch ALGORITHM GRID [run_dask_nested_cv.py options]"
+    echo "Usage: sbatch [sbatch options] submit_nested_cv.sbatch ALGORITHM GRID [run_dask_nested_cv.py options]"
     exit 1
 fi
 ALGORITHM=$1
@@ -31,7 +31,7 @@ SRC_DIR=/global/homes/s/sangsong/dask-cv-src
 module load python
 conda activate dask-cv
 
-# Dask workers import procedures_inner, crossvalidation, regression from here
+# Dask workers import procedures_cv, crossvalidation, regression from here
 export PYTHONPATH=$SRC_DIR:$PYTHONPATH
 # Parallelism comes from dask workers; keep numeric libraries single-threaded
 export OMP_NUM_THREADS=1

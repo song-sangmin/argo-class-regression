@@ -263,7 +263,7 @@ def fit_inner_folds(hyperparams_set,
 
         # Choose scoring metric, add others as desired
         if scoring_metric=='median_abs_error':
-            score = calculate_MAE(prediction,inner_val[var_predict])
+            score = np.median(np.abs(prediction - inner_val[var_predict])) #calculate_MAE(prediction,inner_val[var_predict])
             inner_scores.append(score) # 5 medAEs for that hyperparam set.
     mean_score = np.mean(inner_scores) # mean score for that hyp set amongst inner folds
 
@@ -275,9 +275,9 @@ def fit_inner_folds(hyperparams_set,
     # return hyperparams_set, np.mean(scores)
     return set_results
 
-def calculate_MAE(prediction, truth):
-    """ Calculate error between prediction and truth using specified metric"""
-    return np.mean(np.abs(prediction - truth))
+# def calculate_MAE(prediction, truth):
+#     """ Calculate error between prediction and truth using specified metric"""
+#     return np.median(np.abs(prediction - truth))
 
 def select_best_params(list_inner_results):
     """ Return best hyperparameter set from inner fold tuning (as dict)
