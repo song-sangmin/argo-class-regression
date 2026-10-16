@@ -20,7 +20,7 @@ from sklearn.model_selection import GridSearchCV, KFold, cross_val_score
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import LeaveOneGroupOut
 
-from crusoe import regression as mod_reg
+from argoclare import regression as mod_reg
 
 
 # %% Main object to store cross-validation data
@@ -93,7 +93,8 @@ def create_cv_nest(trainval_data,
                     spatial_cv = 'platform',
                     latitude_scaler = 1,
                     indexer='platform_id',
-                  skip_storage = False): 
+                  skip_storage = False,
+                  random_state = None): 
     """ 
     Internal function in setup_cv_container.
     Equivalent to calling setup_cv_container with n_inner = None
@@ -109,6 +110,7 @@ def create_cv_nest(trainval_data,
 
     :param indexer: column name to use for identifying unique platforms for splitting 
                     default 'platform_id' if running .align_platform_indexers() on combined dataset
+    :param random_state: int seed for platform fold splits (default None, not reproducible)
 
     """
     # Set up folds for cross-validation, with optional nesting
@@ -121,7 +123,8 @@ def create_cv_nest(trainval_data,
         [cvtainer.training_inds, cvtainer.validation_inds] = subset_folds(trainval_data, 
                                                                           type='platform',
                                                                             indexer=indexer, 
-                                                                            nfolds=n_split)
+                                                                            nfolds=n_split,
+                                                                            random_state=random_state)
     elif spatial_cv == 'kmeans':
         [cvtainer.training_inds, cvtainer.validation_inds] = subset_folds(trainval_data, 
                                                                           type='kmeans',
@@ -136,7 +139,8 @@ def setup_cv_container(trainval_data,
                        n_inner = None, 
                        spatial_cv = False,
                        latitude_scaler = 1,
-                       indexer='platform_id') -> NestedCrossValContainer: 
+                       indexer='platform_id',
+                       random_state = None) -> NestedCrossValContainer: 
     """ 
     Sets up nested cross-validation containers for each class
 
@@ -152,13 +156,16 @@ def setup_cv_container(trainval_data,
                     changing to >1 gives more weight to latitude in clustering (ex: 3 yields range [-3,3])
     :param indexer: column name to use for identifying unique platforms for splitting 
                     default 'platform_id' if running .align_platform_indexers() on combined dataset
+    :param random_state: int seed for platform fold splits (default None, not reproducible)
+                    the same seed gives identical folds across runs on the same data
 
     :return: NestedCrossValContainer with outer folds for performance estimation
                         and optional inner folds for tuning
     """
     # Set up outer folds, for both ship and float
     outer_nest = create_cv_nest(trainval_data, n_outer, 
-                                spatial_cv=spatial_cv, latitude_scaler = latitude_scaler, indexer=indexer)
+                                spatial_cv=spatial_cv, latitude_scaler = latitude_scaler, indexer=indexer,
+                                random_state=random_state)
     
     # Optional inner folds for hyperparameter tuning (nested CV)
     if n_inner is not None:
@@ -168,7 +175,8 @@ def setup_cv_container(trainval_data,
             inner_nest = create_cv_nest(outer_nest.get_training_data(outer_fold_tag), 
                                         n_inner, 
                                         spatial_cv=spatial_cv, latitude_scaler = latitude_scaler, indexer=indexer,
-                                        skip_storage=True)
+                                        skip_storage=True,
+                                        random_state=random_state)
             # inner_nest = create_cv_nest(outer_nest.training_data[outer_fold_tag], n_inner, 
             #                             spatial_cv=spatial_cv, latitude_scaler = latitude_scaler, indexer=indexer)
             outer_nest.inner_nests[outer_fold_tag] = inner_nest
@@ -202,7 +210,7 @@ def align_platform_indexers(plat_data : list[pd.DataFrame],
 
 
 def subset_folds(platDF, type= 'platform', indexer='wmoid', nfolds=5,
-                            latitude_scaler=1 ) -> list[dict[str, pd.DataFrame]]:
+                            latitude_scaler=1, random_state=None) -> list[dict[str, pd.DataFrame]]:
     """ 
     Returns dictionary of training and validation dataframes for each fold.
 
@@ -214,6 +222,7 @@ def subset_folds(platDF, type= 'platform', indexer='wmoid', nfolds=5,
     :param latitude_scaler: float, scaling ratio for latitude/longitude in k-means
                             default of 1 gives range [-1.1] to match sinusoidal longitude range [-1,1]
                             changing to >1 gives more weight to latitude in clustering (ex: 3 yields range [-3,3])
+    :param random_state: int seed for shuffling platforms (type='platform' only), default None
     :return: training_inds: dictionary with keys 'fold1', 'fold2', ... with training DF integer locs
              validation_inds: dictionary with keys 'fold1', 'fold2', ... with validation DF integer locs
 
@@ -233,7 +242,7 @@ def subset_folds(platDF, type= 'platform', indexer='wmoid', nfolds=5,
     elif type == 'platform': 
         # platDF[indexer] = platDF[indexer].astype(str) #catch
         ids = platDF[indexer].astype(str).unique().to_numpy()
-        np.random.shuffle(ids)
+        np.random.default_rng(random_state).shuffle(ids)
         holdout_ids = np.array_split(ids, nfolds)
         for k in range(nfolds):
             # training_inds[('fold'+str(k+1))] = ~platDF[indexer].isin(holdout_ids[k])

@@ -14,7 +14,7 @@ import scipy
 import matplotlib
 import matplotlib.pyplot     as plt  
 
-from crusoe import oceantools as myocn
+from argoclare import oceantools as myocn
 from crplot import figtools as mod_plot
 
 plt.rcParams.update(mod_plot.my_params(size=12))
@@ -339,7 +339,7 @@ def calc_mlp(platDS, threshold=0.03):
     @return:    prof_mlps: DataFrame with 'profid' as index and 'mlp' as column
                 no_data: List of profids without valid data 
     """
-    prof_mlps = pd.DataFrame(index=pd.unique(platDS.profid.values), columns=['mlp'])
+    prof_mlps = pd.DataFrame(index=pd.unique(platDS.profid.values), columns=['mlp'], dtype=float) # float so gsw.z_from_p accepts it
     no_data = [] 
     
     for id, prof in platDS.to_dataframe().groupby('profid'):
@@ -430,18 +430,20 @@ def interpolate_z_profile(prof, pres_levels, var_list,
     for _, subprof in prof.groupby('continuous_id'):
         if len(subprof) > 1: # If there is more than 1 point to fit pchip over
             xmin = subprof.pressure.min(); xmax = subprof.pressure.max()
-            subpres_levels = [x for x in pres_levels if x > xmin and x < xmax] # valid pres levels
+            # Inclusive, so a level that falls exactly on the first/last observation is kept
+            # (pchip passes through the observations, so it returns the observed value there)
+            subpres_levels = [x for x in pres_levels if x >= xmin and x <= xmax] # valid pres levels
             for var in var_list:
-                subprof = subprof.dropna(subset=[var]) # y must have finite values
-                if len(subprof) > 1: # If there is more than 1 point to fit pchip over
-                    f = scipy.interpolate.PchipInterpolator(x=subprof['pressure'], y=subprof[var], extrapolate = False)
+                varprof = subprof.dropna(subset=[var]) # y must have finite values
+                if len(varprof) > 1: # If there is more than 1 point to fit pchip over
+                    f = scipy.interpolate.PchipInterpolator(x=varprof['pressure'], y=varprof[var], extrapolate = False)
                     output.loc[subpres_levels, var] = f(subpres_levels)
 
     if surface_fill > 0:
         # # ==== HANDLE SURFACE GAPS 
         # Fill surface with the nearest neighbor if the first observed value is below x_fill = 25
         first_obs = prof.iloc[0]
-        if first_obs['pressure'] < surface_fill:
+        if first_obs['pressure'] <= surface_fill: # <= to match the surface filter (first obs <= 25 dbar)
             for var in var_list:
                 # Decide here if you want to fill with first interpolated value, or first observed value
                 # fill_value = output.dropna().iloc[0].y_interp # first interp
@@ -464,7 +466,8 @@ def interpolate_z_profile(prof, pres_levels, var_list,
     
 
 def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), var_list = 'all', bgc_list = [], 
-                           z_gap = 200, surface_fill =0, ref_time = '2014-01-01'):
+                           z_gap = 200, surface_fill =0, ref_time = '2014-01-01',
+                           grouping_col = 'profid'):
     ''' 
     Interpolate variables to a new pressure grid, without extrapolation.
     
@@ -492,8 +495,8 @@ def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), var_list =
 
     # Initialize list to hold interpolated DFs, one for each profile
     profile_interp_list = []
-    for key, profDF in argoDF.groupby('profid'):
-        if len(profDF)>2:
+    for key, profDF in argoDF.groupby(grouping_col):
+        if len(profDF)>=2:
             profile_interp_list.append(interpolate_z_profile(profDF, pres_levels, var_list, 
                                                 z_gap = z_gap,  # avoid interpolating over large gaps 
                                                 surface_fill = surface_fill,

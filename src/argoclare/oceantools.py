@@ -375,6 +375,36 @@ def array_TSbin(df, nbins, var='oxygen', stat='count'):
 
     return arr
 
+# %% wind speed
+
+def wind_speed(windstress,rho_air=1.2):
+    '''
+    Wind speed calculation from wind stress, using the formula:
+    tau = rho_air * C_d * (w_speed)^2 where C_d = a/w_speed + b + c*w_speed
+
+    Solves the roots of the equation: a*u^3 + b*u^2 + c*u - tau/rho_air
+
+    where coefficients a, b, and c are based on Large & Yeager (2004)
+    -----------------------------------------------------------------
+    Input
+     - windstress: single value of total wind stress 
+     - rho_air: density of air, default = 1.2
+    '''
+    if np.sum(windstress)==0 or np.isnan(windstress):
+        speed = np.array([np.nan])
+    else:
+        a0 = 0.0000764; a1 = 0.000142; a2 = 0.0027
+        a3 = -windstress/rho_air
+        r = np.roots([a0,a1,a2,a3])
+        zro = abs(r.imag)<1e-7
+        if np.sum(zro) > 0:
+            speed = r.real[zro]
+        else:
+            speed = np.array([np.nan])
+            
+    return speed[0]
+
+
 
 
 
