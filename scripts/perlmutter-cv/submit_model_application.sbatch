@@ -8,7 +8,8 @@
 #SBATCH --output=/pscratch/sd/s/sangsong/dask_cv/logs/%x_%j.out
 #
 # Train one final clustered model (algorithm + grid per cluster set in CLUSTER_MODELS
-# in run_model_application.py) and apply it to coreArgo data on 1 CPU node.
+# in run_model_application.py, or in a JSON file from compare_algorithms.py) and apply
+# it to coreArgo data on 1 CPU node.
 #
 # Usage (from /global/homes/s/sangsong/dask-cv-src):
 #   sbatch -J app_RFR submit_model_application.sbatch
@@ -16,6 +17,9 @@
 #
 # Any arguments are passed on to run_model_application.py, e.g. also save the fitted models:
 #   sbatch -J app_RFR submit_model_application.sbatch --save-models
+# or use the best algorithm by cluster from compare_algorithms.py:
+#   sbatch -J app_cmp20261015 submit_model_application.sbatch \
+#       --cluster-models /pscratch/sd/s/sangsong/dask_cv/results/cmp20261015_bestAlgorithms.json
 
 set -eo pipefail
 

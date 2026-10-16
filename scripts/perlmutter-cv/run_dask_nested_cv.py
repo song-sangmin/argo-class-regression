@@ -44,6 +44,8 @@ def parse_args():
     parser.add_argument('--n-inner', type=int, default=5, help='Inner folds (tuning)')
     parser.add_argument('--cv-type', default='platform', choices=['platform', 'kmeans'])
     parser.add_argument('--scoring', default='median_abs_error', help='Inner fold scoring error')
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Seed for platform fold splits; use the same seed to compare algorithms on identical folds')
     parser.add_argument('--n-workers', type=int, default=64)
     parser.add_argument('--threads-per-worker', type=int, default=2)
     parser.add_argument('--data', default=default_data)
@@ -61,7 +63,7 @@ def main():
     trainval_data = pd.read_csv(args.data, index_col=0) # for platformID
     print(f'Loaded {len(trainval_data)} samples from {args.data}')
     print(f'Algorithm: {args.algorithm}, grid: {args.grid} = {tuning_grid}')
-    print(f'Folds: {args.n_outer} outer x {args.n_inner} inner, run name: {run_name}')
+    print(f'Folds: {args.n_outer} outer x {args.n_inner} inner, seed: {args.seed}, run name: {run_name}')
 
     with LocalCluster(n_workers=args.n_workers,
                       threads_per_worker=args.threads_per_worker,
@@ -76,7 +78,8 @@ def main():
                                             args.cv_type,
                                             args.scoring,
                                             savepath,
-                                            run_name)
+                                            run_name,
+                                            seed=args.seed)
         print('Finished dask cross validation at: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
 
 

@@ -19,7 +19,8 @@ def run_model_application(client, trainval_data, application_data,
                           cluster_models,
                           cv_type, scoring_metric,
                           outpath, outfile,
-                          save_models=False):
+                          save_models=False,
+                          cluster_models_source=None):
     """ Main dask implementation
     Train one final clustered model on trainval_data and apply it to application_data.
 
@@ -38,6 +39,7 @@ def run_model_application(client, trainval_data, application_data,
                            training_algorithm is 'RFR', 'ERT' or 'XGB', tuning_grid is a dict
     :param cv_type: choose "platform" or "kmeans"
     :param save_models: pickle the fitted final models with joblib (default False)
+    :param cluster_models_source: (str) where cluster_models came from, written to the run description
 
     :return: application_data with columns cluster{k}_pred, weighted_pred, cluster{k}_calpred, lincal_pred
     """
@@ -224,6 +226,7 @@ def run_model_application(client, trainval_data, application_data,
         file.write('N_FOLDS: ' + str(n_folds) + '\n')
         file.write('CV_TYPE: ' + cv_type + '\n')
         file.write('TUNING_SCORE_METRIC: ' + scoring_metric + '\n')
+        file.write('CLUSTER_MODELS_SOURCE: ' + str(cluster_models_source) + '\n')
         file.write('N_TRAINVAL: ' + str(len(trainval_data)) + '\n')
         file.write('N_APPLICATION: ' + str(len(application_data)) + '\n')
         file.write('N_PREDICTED: ' + str(application_data['weighted_pred'].notna().sum()) + '\n')

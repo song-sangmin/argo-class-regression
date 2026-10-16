@@ -23,7 +23,8 @@ def run_dask_nested_cv(client, trainval_data, n_clusters, sea_ice_clusters,
                              n_outer, n_inner, 
                             training_algorithm, tuning_grid,
                             cv_type, scoring_metric,
-                            outpath, outfile):
+                            outpath, outfile,
+                            seed=None):
     """ Main dask implementation 
     Inner fold version of run_dask_crossvalidation 
     
@@ -37,6 +38,7 @@ def run_dask_nested_cv(client, trainval_data, n_clusters, sea_ice_clusters,
     :param training_algorithm: (str) choose 'RFR', 'ERT', 'XGB'
     :param tuning_grid: dictionary of hyperparameter choices to test
     :param cv_type: choose "platform" or "kmeans" 
+    :param seed: int seed for platform fold splits (default None, not reproducible)
     
     
     """
@@ -57,7 +59,8 @@ def run_dask_nested_cv(client, trainval_data, n_clusters, sea_ice_clusters,
                                 n_outer = n_outer,
                                 n_inner = n_inner,
                                 spatial_cv = cv_type,
-                                indexer = 'platform_id'))
+                                indexer = 'platform_id',
+                                random_state = seed))
         soclass_cvtainers['cluster' + str(classnum)] = outer_nest
     cvtainers_future = client.scatter(soclass_cvtainers,broadcast=True)
 
@@ -217,6 +220,7 @@ def run_dask_nested_cv(client, trainval_data, n_clusters, sea_ice_clusters,
         file.write('N_OUTER: ' + str(n_outer) + '\n')
         file.write('N_INNER: ' + str(n_inner) + '\n')
         file.write('CV_TYPE: ' + cv_type + '\n')
+        file.write('SEED: ' + str(seed) + '\n')
         file.write('INNER_SCORE_METRIC: ' + scoring_metric + '\n')
         file.write('TUNING_GRID: ' + '\n')
         for key, value in tuning_grid.items():

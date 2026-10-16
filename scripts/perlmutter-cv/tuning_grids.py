@@ -7,23 +7,31 @@ Add new grids here, then pass the key on the command line, e.g.
 TUNING_GRIDS = {
     # ===== RFR =====
     'rfr_full': {'max_features': range(1, 9),
-                 'min_samples_split': range(2, 11, 2),
-                 'min_samples_leaf': range(2, 11, 2),
+                 'min_samples_leaf': range(1,10,2),
                  'n_estimators': [100, 250, 500, 750, 1000]},
     # Small grid for checking the job runs (use with -q debug)
     'rfr_test': {'max_features': range(1, 3),
-                 'min_samples_split': [5, 10],
+                 'min_samples_leaf': [2, 5],
                  'n_estimators': [100, 500]},
 
     # ===== ERT =====
-    'ert_full': {'max_features': range(1, 6),
-                 'min_samples_split': range(2, 11),
+    'ert_full': {'max_features': range(1, 9),
+                 'min_samples_leaf': range(1,10,2),
                  'n_estimators': [100, 250, 500, 750, 1000]},
+    
+    'ert_test': {'max_features': range(1, 3),
+                 'min_samples_leaf': [2, 5],
+                 'n_estimators': [100, 500]},
 
     # ===== XGB =====
     'xgb_full': {'eta': [0.01, 0.02, 0.03, 0.04, 0.05], # shrinkage
                  'max_depth': [2, 3, 4, 5, 6],
-                 'min_child_weight': [1, 2, 5, 10], # larger = more conservative
+                 'gamma' : range(0,6), # larger = more conservative
+                 'min_child_weight': [1, 2, 5, 10, 20], # larger = more conservative
                  'colsample_bytree': [0.5, 0.625, 0.75, 0.875, 1.0], # prop. of features for each tree
                  'n_estimators': [100, 250, 500, 750, 1000]},
+
+    'xgb_test': {'eta': [0.01, 0.05],
+                'max_depth': [2, 3]
+                }
 }
