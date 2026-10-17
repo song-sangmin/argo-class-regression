@@ -40,7 +40,7 @@ from joblib import Parallel, delayed
 import argoclare.argotools as mod_argo
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-import importer # noqa: E402
+import argoclare.importer as importer # noqa: E402
 
 default_merged = importer.local_data_folder + 'LIGHT-bgcArgo/synArgo_realworld_matches_merged.nc'
 default_outpath = importer.local_working_folder + 'synthetic/L3-interp/'
