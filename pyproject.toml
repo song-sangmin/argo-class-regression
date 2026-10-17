@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "argo-cv"
+name = "argoclare"
 version = "0.1.0"
 description = 'Utilities for regression modeling using Argo data'
 readme = 'README.md'

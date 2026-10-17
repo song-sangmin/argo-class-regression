@@ -7,8 +7,8 @@ import pyproj
 import os
 from datetime import datetime, timedelta
 
-from crusoe import argotools as mod_argo
-from crusoe import oceantools as mod_ocean
+from argoclare import argotools as mod_argo
+from argoclare import oceantools as mod_ocean
 import gsw
 from tqdm import tqdm
 
@@ -45,6 +45,52 @@ def match_profid_from_datetag(soccomDF, floatINDEX):
             missing.append(x)
         
     soccomDF = soccomDF.dropna(subset=['profid']).copy().set_index('profid')
+
+    return soccomDF, missing
+
+def match_profid_nearest_time(soccomDF, floatINDEX, tolerance='1h'):
+    """
+    Same as match_profid_from_datetag(), but matches on the nearest profile time
+    of the same float within a tolerance, instead of an exact 'prof_datetag'
+    (WMO + YYYYMMDDHH). Catches profiles whose times sit a few minutes apart
+    across an hour boundary (e.g. 08:59 vs 09:01), which give different datetags.
+    @param      soccomDF with 'wmoid', 'datetime' and 'prof_datetag' columns
+                floatINDEX has coordinate 'profid' and variables 'wmoid', 'datetime'
+                tolerance: max time separation allowed, e.g. '1h', '30min'
+    @return     soccomDF indexed by matched 'profid', with column 'time_sep_min'
+                (minutes between SOCCOM and floatINDEX profile times)
+                missing: list of prof_datetags with no profile within tolerance
+    """
+    finder = pd.DataFrame({
+        'profid': [str(x).replace('test', '') for x in floatINDEX['profid'].values],
+        'wmoid': floatINDEX['wmoid'].values.astype(float).astype(int).astype(str),
+        'prof_time': pd.to_datetime(floatINDEX['datetime'].values.astype(str), format='mixed').astype('datetime64[ns]'),
+    }).sort_values('prof_time')
+
+    socDF = soccomDF.drop(columns=['profid'], errors='ignore').copy() # match_profid_from_datetag adds 'profid' in place
+    socDF['wmoid'] = socDF['wmoid'].astype(str)
+    socDF['datetime'] = pd.to_datetime(socDF['datetime']).astype('datetime64[ns]')
+    socDF['_order'] = np.arange(len(socDF)) # keep original row order
+
+    # For each SOCCOM row, nearest profile in time from the same float
+    matched = pd.merge_asof(socDF.sort_values('datetime'), finder,
+                            left_on='datetime', right_on='prof_time', by='wmoid',
+                            direction='nearest', tolerance=pd.Timedelta(tolerance))
+    matched['time_sep_min'] = (matched['datetime'] - matched['prof_time']).abs().dt.total_seconds() / 60
+    # Matches that the exact datetag would have missed (times fall in different hours)
+    found = matched['profid'].notna()
+    n_new = (matched.loc[found, 'prof_datetag'] !=
+             matched.loc[found, 'wmoid'] + '_' + matched.loc[found, 'prof_time'].dt.strftime('%Y%m%d%H')).sum()
+    matched = matched.sort_values('_order').drop(columns=['_order', 'prof_time'])
+
+    missing = matched.loc[matched['profid'].isna(), 'prof_datetag'].tolist()
+    n_dup = matched['profid'].dropna().duplicated().sum()
+    if n_dup > 0:
+        print(f'Warning: {n_dup} SOCCOM rows matched a profid already used by another row')
+    print(f'Matched {found.sum()} of {len(matched)} rows within {tolerance} '
+          f'({n_new} not matched by exact datetag); {len(missing)} missing')
+
+    soccomDF = matched.dropna(subset=['profid']).set_index('profid')
 
     return soccomDF, missing
 
@@ -110,11 +156,7 @@ def process_soccom_20m_averages(soccom_df, start_date = '2013-12-31', end_date =
     soccom_df = soccom_df.rename(columns={'Lat':'latitude', 'Lon':'longitude',
                         'MLD':'mld', 'AbsSalt':'SA', 'ConservTemp':'CT'})
     
-    if 'lon_round' not in soccom_df.columns: # for faster slp
-        soccom_df['lon_round'] = round((soccom_df['longitude'] + 180)/2.5)*2.5
-        soccom_df['lat_round'] = round(soccom_df['latitude']/2.5)*2.5
-
-    # For NCEP set range 0-360
+    # ERA5 sea level pressure uses longitude range -180 to 180
     soccom_df = mod_ocean.set_longitude_range(soccom_df, end_type = '180')
     # soccom_df['atmos_pres_Pa'] = soccom_df.apply(lambda row: get_row_sealevelpressure(row), axis=1)
     # soccom_df['atmos_pres_atm'] = soccom_df['atmos_pres_Pa'] / 1013.25 / 100
@@ -173,14 +215,21 @@ def add_regression_time_vars(platDF):
     return platDF
 
 def add_sea_level_pressure(platDF):
+    """ 
+    Nearest ERA5 0.25 deg grid point and hour. Fixed Oct 2026: previously looked up
+    round((lon + 180)/2.5)*2.5, meant for a 0-360 grid, which read western hemisphere samples
+    180 deg away and clamped eastern hemisphere samples to 179.75E on the -180-180 ERA5 grid.
+    """
     print('Adding atmospheric pressure from ERA5 sea level pressure data...')
-    if 'lon_round' not in platDF.columns: # for faster slp
-        platDF['lon_round'] = round((platDF['longitude'] + 180)/2.5)*2.5
-        platDF['lat_round'] = round(platDF['latitude']/2.5)*2.5
-
     platDF['datetime'] = pd.to_datetime(platDF['datetime'])
-    platDF = mod_ocean.set_longitude_range(platDF, end_type = '180')
-    platDF['atmos_pres_Pa'] = platDF.apply(lambda row: get_row_sealevelpressure(row), axis=1)
+    platDF = mod_ocean.set_longitude_range(platDF, end_type = '180') # ERA5 grid is -180 to 180
+    years = platDF['datetime'].dt.year.values
+    slp = np.full(len(platDF), np.nan)
+    for year in np.unique(years): # open each year's file once
+        pos = np.flatnonzero(years == year)
+        era_slp = xr.open_dataset(local_working_folder + 'era5/era5_mean_slp_yr' + str(year) + '.nc')
+        slp[pos] = [get_row_sealevelpressure(row, era_slp) for _, row in platDF.iloc[pos].iterrows()]
+    platDF['atmos_pres_Pa'] = slp
     platDF['atmos_pres_atm'] = platDF['atmos_pres_Pa'] / 1013.25 / 100
     print("Added ERA5 sea level pressure.")
     return platDF
@@ -218,10 +267,11 @@ def add_atmospheric_carbon_vars(platDF, convert_pco2=True, add_slp=False): # , m
 
 # %% ATMOSPHERIC AND OCEANIC CARBON VARS
 
-def get_row_sealevelpressure(row):
+def get_row_sealevelpressure(row, era_slp=None):
     """ 
     Using ERA5 (Jul 2026)
-    Requires longitude range -180 to 180"""
+    Requires longitude range -180 to 180
+    era_slp: that year's ERA5 dataset, opened from file if None"""
     # Add atmospheric pressure from NCEPII sea level pressure data. Match lon range 0-360
     # Needed for conversion from fco2 to pco2
     # Returns values in Pascals (divide by 101325 to get to atm)
@@ -236,13 +286,12 @@ def get_row_sealevelpressure(row):
     #     atmos_pres_Pa = ncep_sea_level_pressure.sel(lon=row.lon_round, lat=row.lat_round, time = row.datetime,
     #                         method='nearest')['mslp'].values.tolist()
 
-    filepath = local_working_folder + 'era5/'
-    era_slp = xr.open_dataset(filepath + 'era5_mean_slp_yr' + str(year) + '.nc')
+    if era_slp is None:
+        filepath = local_working_folder + 'era5/'
+        era_slp = xr.open_dataset(filepath + 'era5_mean_slp_yr' + str(year) + '.nc')
     # print('Using ERA5 sea level pressure for year ' + str(year) + ' to get atmospheric pressure.')
     # print('Warning: Longitude range assumes -180 to 180')
-    # Uses rounded longitude and latitude, faster
-    # socatDF = mod_ocean.set_longitude_range(socatDF, end_type = '180')
-    atmos_pres_Pa = era_slp.sel(longitude=row.lon_round, latitude=row.lat_round, valid_time = row.datetime,
+    atmos_pres_Pa = era_slp.sel(longitude=row.longitude, latitude=row.latitude, valid_time = row.datetime,
                             method='nearest')['msl'].values.tolist()
     
     return atmos_pres_Pa
@@ -252,7 +301,7 @@ def get_row_atmos_co2_ppm(row):
     """ 
     Using MBL marine boundary layer product (Jul 2026)
     Assumes longitude """
-    mbl_co2 = xr.open_dataset(root_data_folder + 'marineboundarylayer/co2_mbl_2014-2023_dataset_combined.nc')
+    mbl_co2 = xr.open_dataset(root_data_folder + 'marineboundarylayer/co2_mbl_2014-2024_dataset_combined.nc')
     mbl_co2.lat_deg.values
 
     # originally in ppm

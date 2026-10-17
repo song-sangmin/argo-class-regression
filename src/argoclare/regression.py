@@ -255,9 +255,11 @@ def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val',
                 sampleDF: dataframe with dataset to get errors on 
                 sample_tag: specify a string (default "val" returns DF with cols 'val_error')
                             only need if target_known = True
+                target_known: if False, target_var is not required in sampleDF (e.g. application data)
     """
     temp_feat_list = [x for x in feat_list if x != 'sea_ice']
-    sampleDF = sampleDF.dropna(axis=0, subset=temp_feat_list + [target_var]).copy()
+    required_cols = temp_feat_list + [target_var] if target_known else temp_feat_list
+    sampleDF = sampleDF.dropna(axis=0, subset=required_cols).copy()
     
     if 'mld' in feat_list: # should already be log_mld in feat_list, but catch any missed
         print('Warning: feature_list includes mld instead of log(mld), transforming...')
@@ -285,8 +287,8 @@ def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val',
 # originally from 3.2_kfold
 from scipy import stats
 
-def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'delta_pco2'):
-    """ @param  """
+def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'delta_pco2', target_known = True):
+    """ @param  target_known: if False, skip calibrated error columns (target_var not required) """
     
     # New version as of Mar 1 2026
     calibrated_valDF = valDF.copy()
@@ -301,9 +303,10 @@ def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'del
     calibrated_valDF['lincal_pred'] = calibrated_valDF.apply(lambda row: weighted_prediction(row, k_list, pred_col_tag = '_calpred'),
                                                                       axis=1)
 
-    calibrated_valDF['calibrated_error'] = calibrated_valDF['lincal_pred'] - calibrated_valDF[target_var]
-    calibrated_valDF['calibrated_relative_error'] = calibrated_valDF['calibrated_error'] / calibrated_valDF[target_var]
-    
+    if target_known:
+        calibrated_valDF['calibrated_error'] = calibrated_valDF['lincal_pred'] - calibrated_valDF[target_var]
+        calibrated_valDF['calibrated_relative_error'] = calibrated_valDF['calibrated_error'] / calibrated_valDF[target_var]
+
     return calibrated_valDF
 
 def get_clustered_calibration_coeffs(valDF):
