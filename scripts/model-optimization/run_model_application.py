@@ -28,7 +28,7 @@ from tuning_grids import TUNING_GRIDS
 
 # ==== Standard run parameters =======
 n_clusters = 6 # SO classes
-sea_ice_clusters = [3, 5]
+sea_ice_clusters = [5, 6]
 
 feat_list = ['CT', 'SA', 'log_mld', 'adt', 'sea_ice',
              'wind_speed', 'atmos_pres_atm', 'max_solar_rad'] # 8 features

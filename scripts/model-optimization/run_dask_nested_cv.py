@@ -20,14 +20,14 @@ from tuning_grids import TUNING_GRIDS
 
 # ==== Standard run parameters =======
 n_clusters = 6 # SO classes
-sea_ice_clusters = [3, 5]
+sea_ice_clusters = [5, 6]
 
 feat_list = ['CT', 'SA', 'log_mld', 'adt', 'sea_ice',
              'wind_speed', 'atmos_pres_atm', 'max_solar_rad'] # 8 features
 var_predict = 'delta_pco2'
 
 # Combined training/validation data from SOCAT and BGC-Argo
-default_data = '/global/u1/s/sangsong/dask-cv-src/combined_trainval_acc20260928_seaiceclusters35.csv'
+default_data = '/global/u1/s/sangsong/dask-cv-src/combined_trainval_acc20260928_seaiceclusters56.csv'
 # Folder to save results to
 default_savepath = '/pscratch/sd/s/sangsong/dask_cv/results/'
 
