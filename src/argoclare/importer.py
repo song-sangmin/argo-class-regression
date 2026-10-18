@@ -9,8 +9,8 @@ current, corrected versions. Update the entry here when a dataset is regenerated
     P1  one row per sample with regression features    (create_P1_core/bgc/socat_features.py)
     P2  clustered (to be added)
 
-Usage (from scripts/ or with scripts/ on sys.path):
-    import importer
+Usage (with argoclare installed, e.g. pip install -e . from the repo root):
+    import argoclare.importer as importer
     importer.status()                                   # what is registered, and whether it exists
     path = importer.path_to('P1', 'socat')
     coreINDEX = importer.open_data('L3', 'coreINDEX')

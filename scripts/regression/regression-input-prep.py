@@ -24,6 +24,9 @@ Usage:
     python regression-input-prep.py --application <P2_coreArgo_application...parquet>
     python regression-input-prep.py --trainval <synthetic P2 trainval> --drop-features adt \\
         --application <P2_synArgo_core_application...parquet> --tag synthetic
+
+    python regression-input-prep.py --trainval /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synthetic_combined_trainval_socat_bgc_2014-2023_acc20261017.parquet --drop-features adt --application /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synArgo_core_application_2014-2023_acc20261016.parquet --tag synthetic
+
 """
 import argparse
 import os
@@ -34,7 +37,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-import importer # noqa: E402
+import argoclare.importer as importer # noqa: E402
 
 default_features = ['CT', 'SA', 'log_mld', 'adt', 'sea_ice', 'wind_speed', 'atmos_pres_atm', 'max_solar_rad']
 float_platforms = ['bgcArgo', 'synBgcArgo']
