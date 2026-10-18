@@ -1,5 +1,5 @@
-import crossvalidation
-import regression
+from argoclare import crossvalidation
+from argoclare import regression
 import procedures_cv
 
 from datetime import datetime

@@ -27,9 +27,9 @@ feat_list = ['CT', 'SA', 'log_mld', 'adt', 'sea_ice',
 var_predict = 'delta_pco2'
 
 # Combined training/validation data from SOCAT and BGC-Argo
-default_data = '/global/u1/s/sangsong/dask-cv-src/combined_trainval_acc20260928_seaiceclusters56.csv'
+default_data = '/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization/x_localdata/combined_trainval_pc8_gmm6_dbar500_seaiceclusters56_acc20261016.csv'
 # Folder to save results to
-default_savepath = '/pscratch/sd/s/sangsong/dask_cv/results/'
+default_savepath = '/pscratch/sd/s/sangsong/argoclare_runs/results/'
 
 
 def parse_args():

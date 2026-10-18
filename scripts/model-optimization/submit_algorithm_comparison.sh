@@ -4,7 +4,7 @@
 # choosing the best algorithm by cluster with compare_algorithms.py.
 # Run from a login node; each algorithm gets its own 1-node job via submit_nested_cv.sbatch.
 #
-# Usage (from /global/homes/s/sangsong/dask-cv-src):
+# Usage (from /global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization):
 #   ./submit_algorithm_comparison.sh TAG [run_dask_nested_cv.py options]
 #   ./submit_algorithm_comparison.sh cmp20261015
 #   SEED=7 ./submit_algorithm_comparison.sh cmp20261015_seed7

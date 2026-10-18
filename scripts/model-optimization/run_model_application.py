@@ -13,7 +13,7 @@ Starts a LocalCluster on the node Slurm allocated, same as run_dask_nested_cv.py
 Usage:
     python run_model_application.py
     python run_model_application.py --run-name crusoe_application_mixed --n-folds 5
-    python run_model_application.py --cluster-models /pscratch/sd/s/sangsong/dask_cv/results/cmp20261015_bestAlgorithms.json
+    python run_model_application.py --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json
 """
 import argparse
 import json
@@ -45,11 +45,11 @@ CLUSTER_MODELS = {
 }
 
 # Combined training/validation data from SOCAT and BGC-Argo
-default_data = '/global/u1/s/sangsong/dask-cv-src/combined_trainval_acc20260928_seaiceclusters35.csv'
+default_data = '/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization/x_localdata/combined_trainval_pc8_gmm6_dbar500_seaiceclusters56_acc20261016.csv'
 # coreArgo data to apply the final model to
-default_application_data = '/global/u1/s/sangsong/dask-cv-src/coreArgo_application.csv'
+default_application_data = '/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization/x_localdata/coreArgo_application_pc8_gmm6_dbar500_acc20261016.csv'
 # Folder to save results to
-default_savepath = '/pscratch/sd/s/sangsong/dask_cv/results/'
+default_savepath = '/pscratch/sd/s/sangsong/argoclare_runs/results/'
 
 
 def parse_args():
