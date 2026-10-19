@@ -28,10 +28,10 @@ from tuning_grids import TUNING_GRIDS
 
 # ==== Standard run parameters =======
 n_clusters = 6 # SO classes
-sea_ice_clusters = [5, 6]
+sea_ice_clusters = [5, 6] # default, change with --sea-ice-clusters
 
 feat_list = ['CT', 'SA', 'log_mld', 'adt', 'sea_ice',
-             'wind_speed', 'atmos_pres_atm', 'max_solar_rad'] # 8 features
+             'wind_speed', 'atmos_pres_atm', 'max_solar_rad'] # 8 features, leave some out with --drop-features
 var_predict = 'delta_pco2'
 
 # ==== Algorithm and tuning grid (name in tuning_grids.py) for each cluster =======
@@ -63,6 +63,10 @@ def parse_args():
     parser.add_argument('--n-workers', type=int, default=64)
     parser.add_argument('--threads-per-worker', type=int, default=2)
     parser.add_argument('--data', default=default_data)
+    parser.add_argument('--sea-ice-clusters', type=int, nargs='+', default=sea_ice_clusters,
+                        help='Clusters trained with sea_ice as a feature (from regression-input-prep.py)')
+    parser.add_argument('--drop-features', nargs='+', default=[], choices=feat_list,
+                        help='Features in feat_list to leave out (e.g. adt for synthetic data)')
     parser.add_argument('--application-data', default=default_application_data)
     parser.add_argument('--savepath', default=default_savepath)
     parser.add_argument('--cluster-models', default=None,
@@ -77,6 +81,7 @@ def main():
     args = parse_args()
     savepath = os.path.join(args.savepath, '') # outfile is appended directly to savepath
     os.makedirs(savepath, exist_ok=True)
+    run_feat_list = [x for x in feat_list if x not in args.drop_features]
 
     # Algorithm and grid names for each cluster, from JSON if given
     if args.cluster_models:
@@ -105,7 +110,7 @@ def main():
     print(f'Loaded {len(trainval_data)} training samples from {args.data}')
     print(f'Loaded {len(application_data)} application samples from {args.application_data}')
 
-    required_cols = feat_list + ['cluster' + str(k) + '_prob' for k in range(1, n_clusters + 1)]
+    required_cols = run_feat_list + ['cluster' + str(k) + '_prob' for k in range(1, n_clusters + 1)]
     missing_cols = [x for x in required_cols if x not in application_data.columns]
     if missing_cols:
         raise ValueError(f'Application data is missing columns {missing_cols}')
@@ -113,6 +118,7 @@ def main():
     for classnum, (algorithm, grid) in sorted(cluster_model_names.items()):
         print(f'Cluster {classnum}: {algorithm}, grid: {grid} = {TUNING_GRIDS[grid]}')
     print(f'Tuning folds: {args.n_folds}, run name: {args.run_name}')
+    print(f'Features: {run_feat_list}, sea ice clusters: {args.sea_ice_clusters}')
 
     with LocalCluster(n_workers=args.n_workers,
                       threads_per_worker=args.threads_per_worker,
@@ -120,8 +126,8 @@ def main():
         print(client)
         print('Starting dask training: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
         procedures_application.run_model_application(client, trainval_data, application_data,
-                                                     n_clusters, sea_ice_clusters,
-                                                     feat_list, var_predict,
+                                                     n_clusters, args.sea_ice_clusters,
+                                                     run_feat_list, var_predict,
                                                      args.n_folds,
                                                      cluster_models,
                                                      args.cv_type,

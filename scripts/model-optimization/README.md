@@ -81,3 +81,20 @@ sbatch -J app_cmp20261015 submit_model_application.sbatch \
 ```
 
 Without `--cluster-models`, `run_model_application.py` uses the `CLUSTER_MODELS` dict at the top of the script. The run description records which one was used. Add `--save-models` to also pickle the fitted models.
+
+
+## Synthetic data: train and apply with the real-world algorithms
+
+No algorithm comparison here. Reuse the `bestAlgorithms.json` from the real-world comparison and point the application job at the synthetic files. `regression-input-prep.py` prints the sea ice clusters and features to use for each dataset (synthetic: cluster 6 only, no `adt`).
+
+```
+X=/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization/x_localdata
+sbatch -J app_synthetic submit_model_application.sbatch \
+    --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json \
+    --data $X/combined_trainval_synthetic_pc8_gmm6_dbar500_seaiceclusters6_acc20261017.csv \
+    --application-data $X/coreArgo_application_synthetic_pc8_gmm6_dbar500_acc20261017.csv \
+    --sea-ice-clusters 6 --drop-features adt \
+    --run-name crusoe_synthetic_application_cmp20261017
+```
+
+`--sea-ice-clusters` and `--drop-features` also work with `submit_nested_cv.sbatch` (passed on to `run_dask_nested_cv.py`), e.g. to get synthetic CV errors for one algorithm.
