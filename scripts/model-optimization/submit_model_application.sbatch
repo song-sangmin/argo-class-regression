@@ -5,13 +5,13 @@
 #SBATCH --nodes=1
 #SBATCH --time=01:00:00
 #SBATCH --job-name=modelapp
-#SBATCH --output=/pscratch/sd/s/sangsong/dask_cv/logs/%x_%j.out
+#SBATCH --output=/pscratch/sd/s/sangsong/argoclare_runs/logs/%x_%j.out
 #
 # Train one final clustered model (algorithm + grid per cluster set in CLUSTER_MODELS
 # in run_model_application.py, or in a JSON file from compare_algorithms.py) and apply
 # it to coreArgo data on 1 CPU node.
 #
-# Usage (from /global/homes/s/sangsong/dask-cv-src):
+# Usage (from /global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization):
 #   sbatch -J app_RFR submit_model_application.sbatch
 #   sbatch -J app_mixed -t 02:00:00 submit_model_application.sbatch --run-name crusoe_application_mixed
 #
@@ -19,16 +19,16 @@
 #   sbatch -J app_RFR submit_model_application.sbatch --save-models
 # or use the best algorithm by cluster from compare_algorithms.py:
 #   sbatch -J app_cmp20261015 submit_model_application.sbatch \
-#       --cluster-models /pscratch/sd/s/sangsong/dask_cv/results/cmp20261015_bestAlgorithms.json
+#       --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json
 
 set -eo pipefail
 
-SRC_DIR=/global/homes/s/sangsong/dask-cv-src
+SRC_DIR=/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization
 
 module load python
 conda activate dask-cv
 
-# Dask workers import procedures_application, procedures_cv, crossvalidation, regression from here
+# Dask workers import procedures_application, procedures_cv from here (argoclare is pip-installed)
 export PYTHONPATH=$SRC_DIR:$PYTHONPATH
 # Parallelism comes from dask workers; keep numeric libraries single-threaded
 export OMP_NUM_THREADS=1

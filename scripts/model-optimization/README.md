@@ -4,7 +4,7 @@
 From terminal: 
 
 ```
-cd /global/homes/s/sangsong/dask-cv-src
+cd /global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization
 
 sbatch -J RFRcv10x5 submit_nested_cv.sbatch RFR rfr_full
 sbatch -J ERTcv10x5 submit_nested_cv.sbatch ERT ert_full
@@ -22,7 +22,7 @@ Anything after the grid name goes to the Python script (--run-name, --n-outer, -
 ## Check on jobs:
 
 squeue --me                                                # status
-tail -f /pscratch/sd/s/sangsong/dask_cv/logs/RFR_full_<JOBID>.out   # live progress
+tail -f /pscratch/sd/s/sangsong/argoclare_runs/logs/RFR_full_<JOBID>.out   # live progress
 scancel <JOBID>                                            # cancel
 sacct -j <JOBID> --format=JobID,State,Elapsed              # after it finishes
 
@@ -48,7 +48,7 @@ If Python crashes, `set -eo pipefail` makes the script stop right away, so a fai
 
 ## Choosing the best algorithm by cluster
 
-Three steps, all started from the login node in `/global/homes/s/sangsong/dask-cv-src`. Pick a tag to name the comparison, e.g. `cmp20261015`.
+Three steps, all started from the login node in `/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization`. Pick a tag to name the comparison, e.g. `cmp20261015`.
 
 **1. Submit nested CV for RFR, ERT and XGB** (three 1-node jobs that run in parallel):
 
@@ -77,7 +77,24 @@ Saved to the results folder:
 
 ```
 sbatch -J app_cmp20261015 submit_model_application.sbatch \
-    --cluster-models /pscratch/sd/s/sangsong/dask_cv/results/cmp20261015_bestAlgorithms.json
+    --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json
 ```
 
 Without `--cluster-models`, `run_model_application.py` uses the `CLUSTER_MODELS` dict at the top of the script. The run description records which one was used. Add `--save-models` to also pickle the fitted models.
+
+
+## Synthetic data: train and apply with the real-world algorithms
+
+No algorithm comparison here. Reuse the `bestAlgorithms.json` from the real-world comparison and point the application job at the synthetic files. `regression-input-prep.py` prints the sea ice clusters and features to use for each dataset (synthetic: cluster 6 only, no `adt`).
+
+```
+X=/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization/x_localdata
+sbatch -J app_synthetic submit_model_application.sbatch \
+    --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json \
+    --data $X/combined_trainval_synthetic_pc8_gmm6_dbar500_seaiceclusters6_acc20261017.csv \
+    --application-data $X/coreArgo_application_synthetic_pc8_gmm6_dbar500_acc20261017.csv \
+    --sea-ice-clusters 6 --drop-features adt \
+    --run-name crusoe_synthetic_application_cmp20261017
+```
+
+`--sea-ice-clusters` and `--drop-features` also work with `submit_nested_cv.sbatch` (passed on to `run_dask_nested_cv.py`), e.g. to get synthetic CV errors for one algorithm.

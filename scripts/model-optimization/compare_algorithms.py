@@ -30,7 +30,7 @@ n_clusters = 6 # SO classes
 var_predict = 'delta_pco2'
 
 # Folder the nested CV runs save results to
-default_savepath = '/pscratch/sd/s/sangsong/dask_cv/results/'
+default_savepath = '/pscratch/sd/s/sangsong/argoclare_runs/results/'
 
 
 def parse_args():

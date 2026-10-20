@@ -1,5 +1,5 @@
-import crossvalidation
-import regression #as mod_reg
+from argoclare import crossvalidation
+from argoclare import regression
 
 import dask
 from dask.distributed import LocalCluster, Client, wait

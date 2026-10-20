@@ -35,7 +35,7 @@ from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture as GMM
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-import importer # noqa: E402
+import argoclare.importer as importer # noqa: E402
 
 default_outpath = importer.local_working_folder + 'P2-clustered/'
 

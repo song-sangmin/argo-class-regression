@@ -17,7 +17,7 @@ Run in order (paths relative to `PKG-argo-clare/scripts/`; outputs in `x_localda
 | P2 trainval | `python synthetic-processing/apply_P2_synthetic_clustering.py --pcm-finder <PCM_finder> --bgc-p1 <P1 bgc> --socat-p1 <P1 SOCAT>` | `P2-clustered/pc8_gmm6_dbar500/P2_synthetic_combined_trainval_socat_bgc_<years>_acc<date>.parquet` |
 | P2 application | `python synthetic-processing/apply_P2_synthetic_synCore_clustering.py --pcm-finder <PCM_finder> --core-p1 <P1 core>` | `P2-clustered/pc8_gmm6_dbar500/P2_synArgo_core_application_<years>_acc<date>.parquet` |
 
-The synthetic SOCAT input (`synSOCAT-daily_matches.nc`) comes from `perlmutter-synthetic/extract_SOCAT.py`.
+The synthetic SOCAT input (`synSOCAT-daily_matches.nc`) comes from `PKG-synthetic-extract/extract_SOCAT.py`.
 
 Notes
 - Core vs bgc: a synthetic float follows a real WMO (`fnum`); bgc = SOCCOM WMOs in the real P1 bgc
@@ -31,7 +31,7 @@ Notes
 - Synthetic training data is subsampled by year in `apply_P2_synthetic_clustering.py`: a random
   (seeded) subset of synthetic bgc profiles per year, sized to the real SOCCOM samples that year in the
   real P2 trainval file (all kept where there are fewer); synthetic SOCAT is already extracted at the
-  real SOCAT samples (`perlmutter-synthetic/build_socatINDEX.py`). Use `--no-subsample` to keep everything.
+  real SOCAT samples (`PKG-synthetic-extract/build_socatINDEX.py`). Use `--no-subsample` to keep everything.
 - The GMM is refit on the synthetic profiles with the same parameters as the real data, so
   synthetic class numbers (north to south by mean latitude) are not the real classes.
 - Full L3 run: ~330k profiles, roughly 45 min with 8 workers.

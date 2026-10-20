@@ -29,7 +29,7 @@ import argoclare.oceantools as mod_ocean
 scripts_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.append(scripts_folder)
 sys.path.append(os.path.join(scripts_folder, 'data-processing'))
-import importer # noqa: E402
+import argoclare.importer as importer # noqa: E402
 import p1_features # noqa: E402
 
 default_outpath = importer.local_working_folder + 'synthetic/P1-processed/'

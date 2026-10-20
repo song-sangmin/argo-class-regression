@@ -27,6 +27,9 @@ Writes parquet files (run parameters, inputs and counts in df.attrs) to the PCM_
 Usage:
     python apply_P2_synthetic_clustering.py --pcm-finder <synthetic PCM_finder parquet> \\
         --bgc-p1 <P1_synArgo_bgc...nc> --socat-p1 <P1_synSOCAT...nc>
+
+
+    python apply_P2_synthetic_clustering.py --pcm-finder /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/PCM_finder_pc8_gmm6_dbar500_acc20261016.parquet --bgc-p1 /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P1-processed/P1_synArgo_bgc_features_yr2014-2023_acc20261016.nc --socat-p1 /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P1-processed/P1_synSOCAT_features_yr2014-2023_acc20261016.nc
 """
 import argparse
 import os
@@ -39,7 +42,7 @@ import xarray as xr
 scripts_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.append(scripts_folder)
 sys.path.append(os.path.join(scripts_folder, 'clustering'))
-import importer # noqa: E402
+import argoclare.importer as importer # noqa: E402
 import p2_classes # noqa: E402
 
 

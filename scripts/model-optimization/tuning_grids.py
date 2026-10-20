@@ -24,12 +24,11 @@ TUNING_GRIDS = {
                  'n_estimators': [100, 500]},
 
     # ===== XGB =====
-    'xgb_full': {'eta': [0.01, 0.02, 0.03, 0.04, 0.05], # shrinkage
-                 'max_depth': [2, 3, 4, 5, 6],
-                 'gamma' : range(0,6), # larger = more conservative
-                 'min_child_weight': [1, 2, 5, 10, 20], # larger = more conservative
-                 'colsample_bytree': [0.5, 0.625, 0.75, 0.875, 1.0], # prop. of features for each tree
-                 'n_estimators': [100, 250, 500, 750, 1000]},
+    'xgb_full': {'eta': [0.01, 0.025, 0.05], # shrinkage
+                 'max_depth': [2, 4, 6, 8],
+                 'min_child_weight': [1, 5, 10, 20], # larger = more conservative
+                 'colsample_bytree': [0.25, 0.5, 0.75], # prop. of features for each tree
+                 'n_estimators': [100, 250, 500]},
 
     'xgb_test': {'eta': [0.01, 0.05],
                 'max_depth': [2, 3]

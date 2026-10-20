@@ -3,3 +3,6 @@ scripts/.DS_Store
 src/.DS_Store
 */__pycache__/*
 */*/__pycache__/
+# NERSC data and job logs
+x_localdata/
+x_logs/

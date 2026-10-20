@@ -31,7 +31,7 @@ import xarray as xr
 import p2_classes
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-import importer # noqa: E402
+import argoclare.importer as importer # noqa: E402
 
 
 def main():

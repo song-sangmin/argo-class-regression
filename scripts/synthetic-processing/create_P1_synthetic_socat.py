@@ -3,7 +3,7 @@
 Same steps as 4.4_synthetic_SOCAT.ipynb, following the real SOCAT workflow
 (data-processing/create_P1_socat_features.py), one row per synthetic SOCAT sample:
     1. Read the synthetic profiles matched to each real SOCAT sample (synSOCAT-daily_matches.nc,
-       from perlmutter-synthetic/extract_SOCAT.py; sample_datetag x 3 model levels)
+       from PKG-synthetic-extract/extract_SOCAT.py; sample_datetag x 3 model levels)
     2. Model surface variables as for the synthetic floats (create_L3_synthetic_argo.py
        process_surface(): wind speed from stress, pCO2surface == 0 as missing, real-data names,
        QC south of 35S and atmospheric pressure > 0.88 atm). The model MLD at the sample is
@@ -21,6 +21,8 @@ Writes one netcdf along 'sample' (longitude -180 to 180) to working-vars/synthet
 
 Usage:
     python create_P1_synthetic_socat.py --indexes <syn core INDEX> <syn bgc INDEX> --datas <syn core DATA> <syn bgc DATA>
+
+    python create_P1_synthetic_socat.py --socat /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/synSOCAT-daily_matches_acc20261016.nc --indexes /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/L3-interp/synthetic_coreINDEX_byProfid_2014-2023_acc20261016.nc /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/L3-interp/synthetic_bgcINDEX_byProfid_2014-2023_acc20261016.nc --datas /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/L3-interp/synthetic_coreDATA_byProfid_2014-2023_acc20261016.nc /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/L3-interp/synthetic_bgcDATA_byProfid_2014-2023_acc20261016.nc
 """
 import argparse
 import os
@@ -37,7 +39,7 @@ import create_L3_synthetic_argo as l3syn
 scripts_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.append(scripts_folder)
 sys.path.append(os.path.join(scripts_folder, 'data-processing'))
-import importer # noqa: E402
+import argoclare.importer as importer # noqa: E402
 import p1_features # noqa: E402
 import create_P1_socat_features as socat_p1 # noqa: E402
 
