@@ -1,4 +1,4 @@
-# Class-dependent Regression Modeling using Argo data 
+# Class-dependent Regression Modeling using Argo data
 
 Utilities for decision tree regression modeling (clustering, feaure processing, cross-validation) using Argo data
 
@@ -11,7 +11,7 @@ Contributors: Scott Henderson, Alison Gray\
 
 ## Installation
 
-To run locally, clone (or fork) repo. 
+To run locally, clone (or fork) repo.
 Things to run once in terminal, from root folder:
 
 ```
@@ -25,6 +25,16 @@ Common functions for ML development are installed within the conda environment `
 From any notebook with the environment `argocv-dev` activated, can run `import argocv`, see naming conventions in folder.
 
 May have to run `git config filter.nbstripout.clean "nbstripout --keep-output"`.
+
+### Using pixi (alternative to conda)
+
+With [pixi](https://pixi.sh) installed, no environment setup is needed (`argoclare` is installed automatically):
+
+```
+pixi run minimal-example    # downloads example data and runs a minimal cross-validation
+pixi run python script.py   # run any script in the default environment
+pixi shell -e dev           # activate the development environment
+```
 
 
 ## Data Sources
