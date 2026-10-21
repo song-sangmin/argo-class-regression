@@ -1,0 +1,97 @@
+# Small example run: one year of core and BGC Argo in the Drake Passage, from ERDDAP.
+#
+# Copy this file, give it a new [run] name, and point the external inputs in [files] at your
+# own copies. Outputs go to <data_root>/<name>/ with fixed names (see DEFAULT_FILES in
+# scripts/data-processing/pipeline.py); relative paths are relative to this file.
+#
+#   cd scripts/data-processing
+#   python create_L0_raw_argo.py        --config ../../configs/example.toml --dataset core
+#   python create_L0_raw_argo.py        --config ../../configs/example.toml --dataset bgc
+#   python create_L1_QC_argo.py         --config ../../configs/example.toml --dataset core   (and bgc)
+#   python create_L2_masked_argo.py     --config ../../configs/example.toml --dataset core   (and bgc)
+#   python create_L3_gridded_coreArgo.py --config ../../configs/example.toml
+#   python create_L3_gridded_bgcArgo.py  --config ../../configs/example.toml
+#   python create_mbl_co2_dataset.py    --config ../../configs/example.toml
+#   python create_P1_core_features.py   --config ../../configs/example.toml
+#   python create_P1_bgc_features.py    --config ../../configs/example.toml
+#   python create_L2_resampled_masked_socat.py --config ../../configs/example.toml
+#   python create_P1_socat_features.py  --config ../../configs/example.toml
+
+[run]
+name = "example_drake2020"
+data_root = "../x_data"            # run folder: <data_root>/<name>/
+years = [2020]
+ref_time = "2014-01-01"            # origin of linear_time / yearday (days)
+
+[region]
+box = [-70, -50, -65, -55]         # lon_min, lon_max, lat_min, lat_max
+pres = [0, 2000]                   # dbar
+
+# %% L0: Argopy download (create_L0_raw_argo.py)
+[L0.fetcher]                       # argopy DataFetcher options
+mode = "expert"                    # all data and QC flags; QC is applied in L1
+params = "all"
+parallel = true
+progress = true                    # set false in batch jobs (argopy needs a terminal for it)
+chunks_maxsize = { time = 30 }
+
+[L0.core]
+source = "erddap"                  # or "gdac", with [files] gdac = <local GDAC copy>
+description = "Ifremer ERDDAP"
+
+[L0.bgc]
+source = "erddap"
+description = "Ifremer ERDDAP"
+
+# %% L1: QC (create_L1_QC_argo.py)
+[L1]
+use_flags = ["1", "2", "5", "8"]
+core_qc_vars = ["temperature_qc", "salinity_qc", "pressure_qc", "time_qc", "position_qc"]
+bgc_qc_vars = ["pH_qc"]            # added to core_qc_vars for bgc; oxygen_qc is kept, not filtered
+bgc_vars = ["pH", "oxygen"]
+n_jobs = 1
+
+# %% L2: open ocean mask (create_L2_masked_argo.py) and SOCAT resample
+[L2]
+bathy_lim = -1000                  # keep profiles where GEBCO elevation < bathy_lim (m)
+
+[socat]                            # create_L2_resampled_masked_socat.py
+version = "SOCATv2025"
+doi = "10.25921/648f-fv35"
+site = "https://socat.info/index.php/version-2025/"
+freq = "23.5h"
+gap_hours = 72
+seed = 0
+
+# %% L3: regridding (create_L3_gridded_*.py)
+[L3]
+surface_max = 25
+bgc_vars = ["pH"]
+n_jobs = 4
+
+# %% P1: regression features (create_P1_*_features.py)
+[P1]
+n_jobs = 1
+
+[P1.bgc]
+depth = 5
+pco2_var = "pCO2_pHbias5_pK01"
+match_hours = 1
+
+[P1.socat]
+dbar_limit = 500
+window_days = 7
+Lx = 2.5
+
+# %% Files
+# Pipeline outputs use the run folder layout, so only external inputs are listed here.
+# Each one has to be downloaded separately; {yr} is filled in for files with one year each.
+[files]
+bathy = "{data_root}/external/GEBCO_2024_sub_ice_topo.nc"                 # https://www.gebco.net
+socat_raw = "{data_root}/external/socatv2025_SouthernOceans_DATA.csv"     # https://socat.info
+soccom_dir = "{data_root}/external/soccom"                                # var_pK1_<depth>_<wmo>.mat
+mbl_txt = ["{data_root}/external/MBL_surfaceco2_GHGreference.txt"]        # https://gml.noaa.gov/ccgg/GHGreference/
+era5_slp = "{data_root}/external/era5/era5_mean_slp_yr{yr}.nc"            # ERA5 msl, hourly
+era5_wind = "{data_root}/external/era5/era5_wind_speed_{yr}.nc"           # ERA5 u10, v10, hourly
+adt = "{data_root}/external/cmems_adt_{yr}.nc"                            # CMEMS DUACS L4 adt, daily
+seaice = "{data_root}/external/sic_pss25_{yr}0101-{yr}1231_v06r00.nc"     # NSIDC CDR v6, daily

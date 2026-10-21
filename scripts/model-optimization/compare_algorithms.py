@@ -1,13 +1,10 @@
-"""Choose the best regression algorithm for each cluster from nested CV results.
+"""
+Choose the best regression algorithm for each cluster from nested CV results.
 
-Reads the outercvErrors files written by the runs that submit_algorithm_comparison.sh
-submits (run names crusoe_<ALGORITHM>_<grid>_<tag>), and for each cluster k scores
-that cluster's own model on its own rows: cluster{k}_pred vs delta_pco2 where cluster == k.
-The best algorithm per cluster is the one with the lowest raw RMSE. Calibrated
-(cluster{k}_calpred) errors are stored alongside for reference; the nested CV
-calibration is fitted on the same validation rows, so they are partly in-sample.
+Reads the outercvErrors files written from submit_algorithm_comparison.sh,
+and chooses best algorithm as the one with the lowest raw RMSE. 
 
-Light pandas work, run on a login node once all runs have finished:
+Run on a login node once all runs from submit_algorithm_comparison.shhave finished:
     module load python; conda activate dask-cv
     python compare_algorithms.py --tag cmp20261015
 

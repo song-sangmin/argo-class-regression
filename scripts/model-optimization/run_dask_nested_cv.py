@@ -1,8 +1,8 @@
-"""Nested CV hyperparameter tuning for one algorithm + tuning grid.
+"""
+Nested CV hyperparameter tuning for one algorithm + tuning grid.
 
-Batch version of dask-hyperparameter-tuning.ipynb. Instead of connecting to the
-scheduler from launch-dask-conda-cpu.sh, it starts a LocalCluster on the node
-Slurm allocated (64 workers x 2 threads by default, same as the interactive runs).
+Batch version of dask-hyperparameter-tuning.ipynb. 
+64 workers x 2 threads by default.
 
 Usage (normally called by submit_nested_cv.sbatch):
     python run_dask_nested_cv.py RFR rfr_full
@@ -71,9 +71,7 @@ def main():
     print(f'Folds: {args.n_outer} outer x {args.n_inner} inner, seed: {args.seed}, run name: {run_name}')
     print(f'Features: {run_feat_list}, sea ice clusters: {args.sea_ice_clusters}')
 
-    with LocalCluster(n_workers=args.n_workers,
-                      threads_per_worker=args.threads_per_worker,
-                      dashboard_address=None) as cluster, Client(cluster) as client:
+    with LocalCluster(dashboard_address=None) as cluster, Client(cluster) as client:
         print(client)
         print('Starting dask training: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
         procedures_cv.run_dask_nested_cv(client, trainval_data,

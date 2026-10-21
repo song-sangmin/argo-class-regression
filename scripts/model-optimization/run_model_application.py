@@ -1,12 +1,12 @@
-"""Train one final clustered model and apply it to coreArgo data.
+"""
+Train one final clustered model and apply it to coreArgo data.
 
-For each cluster, tunes hyperparameters on --n-folds folds of the trainval data
-using the algorithm and grid set in CLUSTER_MODELS below (or in a JSON file from
-compare_algorithms.py, via --cluster-models), fits calibration
-coefficients from out-of-fold predictions, then fits a final model on all of
-that cluster's data. The 6 class models are applied to the application data
-(weighted by cluster probabilities) to add cluster{k}_pred, weighted_pred,
-cluster{k}_calpred and lincal_pred columns.
+For each cluster, tunes hyperparameters on --n-folds.
+Fits calibration coefficients from out-of-fold predictions before
+fitting a final model on all of that cluster's data. 
+
+The 6 class models are applied (weighted by cluster probabilities) 
+to add cluster{k}_pred, weighted_pred, cluster{k}_calpred and lincal_pred.
 
 Starts a LocalCluster on the node Slurm allocated, same as run_dask_nested_cv.py.
 

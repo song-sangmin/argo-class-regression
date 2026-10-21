@@ -6,3 +6,6 @@ src/.DS_Store
 # NERSC data and job logs
 x_localdata/
 x_logs/
+
+# Example pipeline runs (configs/example.toml)
+x_data/

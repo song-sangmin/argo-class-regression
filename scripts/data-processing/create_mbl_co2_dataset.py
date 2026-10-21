@@ -6,13 +6,12 @@ in steps of 0.05 (90S to 30S) and a 'lat_deg' coordinate. The time step is 1/48 
 The old co2_mbl_2014-2023_dataset_combined.nc ended at decimalyr 2024.0, so every 2024
 sample got the 2024-01-01 value; this one runs through 2025.0.
 
-Files downloaded from https://gml.noaa.gov/ccgg/GHGreference/ (surface, sine latitude steps).
-Rows shared between files (e.g. 2021.0) are kept once.
+Reads [files] mbl_txt, downloaded from https://gml.noaa.gov/ccgg/GHGreference/ (surface, sine
+latitude steps), and writes [files] mbl. Rows shared between files (e.g. 2021.0) are kept once.
 
 Usage:
-    python create_mbl_co2_dataset.py
+    python create_mbl_co2_dataset.py --config ../../configs/example.toml
 """
-import argparse
 import os
 from datetime import datetime
 
@@ -20,10 +19,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-folder = '/Volumes/crusoe-repo/data/marineboundarylayer/'
-default_files = ['MBL_2014-2020_surfaceco2_GHGreference.625577290_surface.txt',
-                 'MBL_2021-2024_surfaceco2_GHGreference.1615182493_surface.txt']
-default_out = folder + 'co2_mbl_2014-2024_dataset_combined.nc'
+import pipeline
 
 sin_lat = np.round(np.arange(-1.00, -0.499, 0.05), 2)
 
@@ -39,13 +35,14 @@ def read_mbl_txt(path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--files', nargs='+', default=[folder + f for f in default_files])
-    parser.add_argument('--out', default=default_out)
+    parser = pipeline.parser(__doc__)
     args = parser.parse_args()
+    run = pipeline.start(args, __file__)
+    files = run.input('mbl_txt')
+    files = [files] if isinstance(files, str) else files
+    out = run.output('mbl')
 
-    df = pd.concat([read_mbl_txt(f) for f in args.files])
+    df = pd.concat([read_mbl_txt(f) for f in files])
     dup = df.index.duplicated(keep='first')
     shared = df[df.index.isin(df.index[dup])]
     assert (shared.groupby(level=0).nunique() == 1).all().all(), 'files disagree on shared rows'
@@ -64,11 +61,12 @@ def main():
                 'citation': 'Lan, X., Tans, P., Thoning, K., & NOAA Global Monitoring Laboratory (2024). '
                             'NOAA Greenhouse Gas Marine Boundary Layer Reference - CO2. '
                             'https://doi.org/10.15138/DVNP-F961',
-                'files': ', '.join(os.path.basename(f) for f in args.files),
-                'script': os.path.basename(__file__),
+                'files': ', '.join(os.path.basename(f) for f in files),
+                **run.attrs(),
                 'date_created': datetime.now().strftime('%Y-%m-%d')}
-    ds.to_netcdf(args.out)
-    print(f'Saved {ds.sizes["decimalyr"]} time steps ({yrs}) x {ds.sizes["sin_lat"]} latitudes to {args.out}')
+    ds.to_netcdf(out)
+    print(f'Saved {ds.sizes["decimalyr"]} time steps ({yrs}) x {ds.sizes["sin_lat"]} latitudes to {out}')
+    run.finish()
 
 
 if __name__ == '__main__':

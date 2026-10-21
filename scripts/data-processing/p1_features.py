@@ -17,6 +17,8 @@ Differences from argoclare.preprocessing:
     - add_sea_ice() only adds the instantaneous value unless days_before is given.
 add_sea_level_pressure() uses the nearest ERA5 grid point, matching the Oct 2026 fix to
 argoclare preprocessing.add_sea_level_pressure().
+Gridded files are passed as paths with {yr} (from the run config, see pipeline.Run.feature_files()),
+since joblib workers re-import this module.
 """
 import numpy as np
 import pandas as pd
@@ -27,17 +29,7 @@ import gsw
 from argoclare import oceantools as mod_ocean
 from argoclare import preprocessing as mod_prep
 
-root_data_folder = '/Volumes/crusoe-repo/data/'
-local_data_folder = '/Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/'
-
-slp_file = local_data_folder + 'era5/era5_mean_slp_yr{yr}.nc'
-wind_file = local_data_folder + 'era5/era5_wind_speed_{yr}.nc'
-mbl_file = root_data_folder + 'marineboundarylayer/co2_mbl_2014-2024_dataset_combined.nc'
-adt_file = (root_data_folder + 'copernicusmarine/cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D_'
-            'adt-sla_179.94W-179.94E_88.94S-35.06S_{yr}-01-01-{yr}-12-31.nc')
-seaice_file = root_data_folder + 'nsidc-seaice/sic_pss25_{yr}0101-{yr}1231_v06r00.nc'
-
-ref_time = '2014-01-01'
+ref_time = '2014-01-01' # default origin of linear_time; runs use [run] ref_time
 
 
 # %% Grid sampling
@@ -68,7 +60,7 @@ def sample_points(da, indexers, blocks=None):
 
 # %% Time
 
-def add_time_vars(df):
+def add_time_vars(df, ref_time=ref_time):
     """year, month, day, linear_time, ydcos, ydsin, decimalyr (argoclare add_regression_time_vars)."""
     df = df.copy()
     t = pd.to_datetime(df['datetime'])
@@ -83,7 +75,7 @@ def add_time_vars(df):
 
 # %% Atmospheric pressure and CO2
 
-def add_sea_level_pressure(df, yr):
+def add_sea_level_pressure(df, yr, slp_file):
     """ERA5 mean sea level pressure at the nearest 0.25 deg grid point and hour."""
     da = xr.open_dataset(slp_file.format(yr=yr))['msl']
     df['atmos_pres_Pa'] = sample_points(da, {
@@ -94,7 +86,7 @@ def add_sea_level_pressure(df, yr):
     return df
 
 
-def add_atmospheric_co2(df):
+def add_atmospheric_co2(df, mbl_file):
     """MBL xCO2 (ppm), nearest in time and linear in sin(lat); converted to pCO2 (uatm) with
     the Zeebe and Wolf-Gladrow (2001) vapor pressure. Needs atmos_pres_atm."""
     mbl = xr.open_dataset(mbl_file)
@@ -124,7 +116,7 @@ def add_atmospheric_co2(df):
 
 # %% Ocean surface
 
-def add_adt(df, yr, time_block=16):
+def add_adt(df, yr, adt_file, time_block=16):
     """CMEMS DUACS L4 absolute dynamic topography (m), nearest 0.125 deg grid point and day."""
     da = xr.open_dataset(adt_file.format(yr=yr))['adt']
     df['adt'] = sample_points(da, {
@@ -135,7 +127,7 @@ def add_adt(df, yr, time_block=16):
     return df
 
 
-def add_wind_speed(df, yr):
+def add_wind_speed(df, yr, wind_file):
     """ERA5 10 m wind speed sqrt(u10^2 + v10^2) at the nearest hour, after rounding to 0.25 deg."""
     ds = xr.open_dataset(wind_file.format(yr=yr))
     indexers = {'valid_time': nearest_index(ds.valid_time, df['datetime']),
@@ -147,7 +139,7 @@ def add_wind_speed(df, yr):
     return df
 
 
-def add_sea_ice(df, yr, days_before=None):
+def add_sea_ice(df, yr, seaice_file, days_before=None):
     """NSIDC CDR v6 sea ice concentration (25 km polar stereographic), nearest cell and day.
     Optionally also 'sea_ice_avg_<days_before>d': the mean over 1 to days_before-1 days before
     (as in argoclare get_row_avg_seaice), with each day taken as nearest in this year's file."""
@@ -186,14 +178,14 @@ def save_netcdf(df, dim, path, attrs, coords=('datetime', 'latitude', 'longitude
     return ds
 
 
-def add_all_features(df, yr, seaice_days_before=None):
-    """All P1 features for samples from one year."""
-    df = add_time_vars(df)
-    df = add_sea_level_pressure(df, yr)
-    df = add_atmospheric_co2(df)
-    df = add_adt(df, yr)
-    df = add_wind_speed(df, yr)
-    df = add_sea_ice(df, yr, days_before=seaice_days_before)
+def add_all_features(df, yr, files, ref_time=ref_time, seaice_days_before=None):
+    """All P1 features for samples from one year. files: {slp, wind, mbl, adt, seaice} paths."""
+    df = add_time_vars(df, ref_time)
+    df = add_sea_level_pressure(df, yr, files['slp'])
+    df = add_atmospheric_co2(df, files['mbl'])
+    df = add_adt(df, yr, files['adt'])
+    df = add_wind_speed(df, yr, files['wind'])
+    df = add_sea_ice(df, yr, files['seaice'], days_before=seaice_days_before)
     df = add_solar_radiation(df)
     if 'mld' in df.columns:
         df['log_mld'] = np.log(df['mld'])

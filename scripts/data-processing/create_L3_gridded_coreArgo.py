@@ -1,10 +1,10 @@
 """Create L3 gridded core Argo datasets from the L1 QC'ed profiles.
 
 Same steps as 0.3_coreArgo_processing.ipynb (sections 3-5), one year at a time:
-    1. L2 mask: keep profiles in core_open_ocean_INDEX_<yr>.nc (bathymetry < -1000 m)
-    2. Read those profiles from core_QCflags1258_yr<yr>_<tag>.csv (L1), keep only the latest cast of each
+    1. L2 mask: keep profiles in the [files] L2 open ocean index (bathymetry < -1000 m)
+    2. Read those profiles from the [files] L1 csv, keep only the latest cast of each
        profid (see below), and keep profiles whose shallowest QC'ed observation
-       is within 25 dbar of the surface
+       is within [L3] surface_max (25) dbar of the surface
     3. Regrid to 0-1000 dbar every 5 dbar and 1050-1950 dbar every 50 dbar with argoclare's regrid_pressure_levels()
        (with the interpolate_z_profile() fix that keeps levels falling exactly
        on the first/last observation, e.g. a first observation at 5.0 dbar)
@@ -15,14 +15,12 @@ profid: they were merged in L1, or split across files at a year boundary. The as
 is the last of the cycle, so only the latest cast is kept; the number of descending casts
 dropped is printed and saved in the 'descending_casts_dropped' attribute.
 Each profile also gets a 'prof_datetag' (wmoid_YYYYMMDDHH) coordinate along profid.
-Writes coreDATA_* (profid, pressure) and coreINDEX_* (profid) to core/L3-interp/.
+Writes [files] L3_data (profid, pressure) and L3_index (profid) for core.
 
 Usage:
-    python create_L3_gridded_coreArgo.py                                   # 2014-2024
-    python create_L3_gridded_coreArgo.py --years 2014 --max-profiles 200 --outpath /tmp/test/
+    python create_L3_gridded_coreArgo.py --config ../../configs/example.toml
+    python create_L3_gridded_coreArgo.py --config ../../configs/example.toml --years 2020 --max-profiles 200 --out-dir /tmp/test/
 """
-import argparse
-import os
 from datetime import datetime
 
 import numpy as np
@@ -32,30 +30,25 @@ from joblib import Parallel, delayed
 
 import argoclare.argotools as mod_argo
 
-local_data_folder = '/Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/'
-default_l1_path = local_data_folder + 'core/L1-qc/'
-default_l2_path = local_data_folder + 'core/L2-mask/'
-default_outpath = local_data_folder + 'core/L3-interp/'
-default_l1_tag = 'acc20260730'
+import pipeline
 
-ref_time = '2014-01-01'
 pres_regular = np.arange(0, 1001, 5).tolist() + np.arange(1050, 1951, 50).tolist()
 read_cols = ['profid', 'pressure', 'wmoid', 'cycle_number', 'latitude', 'longitude', 'datetime',
              'CT', 'SA', 'sigma0', 'spice', 'temperature', 'salinity']
 
 
-def open_ocean_index(yr, l2_path):
+def open_ocean_index(path):
     """L2 index for one year: open ocean profiles (bathymetry < -1000 m)."""
-    ds = xr.open_dataset(os.path.join(l2_path, f'core_open_ocean_INDEX_{yr}.nc')).load()
+    ds = xr.open_dataset(path).load()
     ds['datetime'] = ('profid', pd.to_datetime(ds.datetime.values.astype(str), format='mixed'))
     return ds
 
 
-def read_l1_year(path, profids, chunksize=5_000_000):
+def read_l1_year(path, profids, ref_time, bgc_list, chunksize=5_000_000):
     """Read the selected profiles from one L1 csv; returns the data and # of descending casts dropped."""
     profids = set(profids)
     df = pd.concat([chunk[chunk.profid.isin(profids)]
-                    for chunk in pd.read_csv(path, usecols=read_cols, chunksize=chunksize)])
+                    for chunk in pd.read_csv(path, usecols=read_cols + bgc_list, chunksize=chunksize)])
     df['datetime'] = pd.to_datetime(df['datetime'], format='mixed')
 
     # Descending and ascending casts of a cycle share a profid; keep the later (ascending) one
@@ -68,7 +61,7 @@ def read_l1_year(path, profids, chunksize=5_000_000):
     return df.set_index('profid'), n_desc
 
 
-def grid_chunk(chunkDF, chunkINDEX, bgc_list):
+def grid_chunk(chunkDF, chunkINDEX, bgc_list, ref_time):
     """Regrid a group of profiles, then add mixed layer pressure/depth to the data and index."""
     chunk_regular = mod_argo.regrid_pressure_levels(chunkDF, pres_regular, bgc_list=bgc_list,
                                                     z_gap=1000, surface_fill=25, ref_time=ref_time)
@@ -78,44 +71,44 @@ def grid_chunk(chunkDF, chunkINDEX, bgc_list):
     return mod_argo.add_mixedlayer_pressure(chunkINDEX, chunkDS)
 
 
-def grid_parallel(df, yearINDEX, bgc_list, n_jobs):
+def grid_parallel(df, yearINDEX, bgc_list, n_jobs, ref_time):
     """Run grid_chunk() on groups of profiles in parallel; returns lists of index and data chunks."""
     profids = df.index.unique()
     n_chunks = min(len(profids), n_jobs * 4)
     chunk_of = pd.Series(np.arange(len(profids)) % n_chunks, index=profids)
     parts = Parallel(n_jobs=n_jobs)(
-        delayed(grid_chunk)(chunk, yearINDEX.sel(profid=chunk.index.unique().values), bgc_list)
+        delayed(grid_chunk)(chunk, yearINDEX.sel(profid=chunk.index.unique().values), bgc_list, ref_time)
         for _, chunk in df.groupby(df.index.map(chunk_of)))
     return [p[0] for p in parts], [p[1] for p in parts]
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--years', type=int, nargs='+', default=list(range(2014, 2025)))
-    parser.add_argument('--l1-path', default=default_l1_path, help='Folder with L1 QC csv files')
-    parser.add_argument('--l1-tag', default=default_l1_tag, help='Date tag in the L1 file names')
-    parser.add_argument('--l2-path', default=default_l2_path, help='Folder with L2 open ocean index files')
-    parser.add_argument('--outpath', default=default_outpath, help='Folder to save L3 files in')
-    parser.add_argument('--surface-max', type=float, default=25,
-                        help='Keep profiles with a QC\'ed observation shallower than this (dbar)')
-    parser.add_argument('--n-jobs', type=int, default=8, help='Parallel workers for regridding')
+    parser = pipeline.parser(__doc__)
+    parser.add_argument('--years', type=int, nargs='+', default=None, help='Default: [run] years')
+    parser.add_argument('--n-jobs', type=int, default=None, help='Parallel workers for regridding (default: [L3] n_jobs)')
     parser.add_argument('--max-profiles', type=int, default=None,
                         help='Only regrid the first N profiles of each year (for testing)')
     args = parser.parse_args()
+    run = pipeline.start(args, __file__)
+    cfg = run.section('L3')
+    years, ref_time = run.years(), run.ref_time
+    bgc_list = []
+    n_jobs = args.n_jobs or cfg.get('n_jobs', 1)
+    data_file, index_file = run.output('L3_data', 'core'), run.output('L3_index', 'core')
+    l0_source = run.section('L0.core').get('description', '')
 
     data_parts, index_parts = [], []
     n_desc_total = 0
-    for yr in args.years:
+    for yr in years:
         print(f'===> {yr}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
-        yearINDEX = open_ocean_index(yr, args.l2_path)
-        yearDF, n_desc = read_l1_year(os.path.join(args.l1_path, f'core_QCflags1258_yr{yr}_{args.l1_tag}.csv'),
-                                      yearINDEX.profid.values)
+        yearINDEX = open_ocean_index(run.input('L2', 'core', yr=yr))
+        yearDF, n_desc = read_l1_year(run.input('L1', 'core', yr=yr), yearINDEX.profid.values,
+                                      ref_time, bgc_list)
         n_desc_total += n_desc
 
         # Surfacemost observation of the kept cast (L2 values may come from the descending cast)
         first = yearDF.reset_index().sort_values('pressure').groupby('profid').first()
-        first = first[first.pressure <= args.surface_max]
+        first = first[first.pressure <= cfg.get('surface_max', 25)]
         if args.max_profiles:
             first = first.iloc[:args.max_profiles]
         yearDF = yearDF[yearDF.index.isin(first.index)]
@@ -127,7 +120,7 @@ def main():
         print(f'  {yearINDEX.sizes["profid"]} open ocean profiles with surface data '
               f'({n_desc} descending casts dropped); regridding and adding MLD...')
 
-        year_index_parts, year_data_parts = grid_parallel(yearDF, yearINDEX, bgc_list=[], n_jobs=args.n_jobs)
+        year_index_parts, year_data_parts = grid_parallel(yearDF, yearINDEX, bgc_list, n_jobs, ref_time)
         index_parts += year_index_parts
         data_parts += year_data_parts
         print(f'  regridded {sum(p.sizes["profid"] for p in year_data_parts)} profiles: ',
@@ -147,17 +140,20 @@ def main():
     print(f'Dropped {n_desc_total} descending casts in total ({int((~keep).sum())} across year boundaries)')
 
     datetag = datetime.now().strftime('%Y%m%d')
-    yrs = f'{min(args.years)}-{max(args.years)}' if len(args.years) > 1 else str(args.years[0])
+    flags = ','.join(run.section('L1').get('use_flags', []))
+    bathy_lim, surface_max = run.section('L2').get('bathy_lim', -1000), cfg.get('surface_max', 25)
+    yrs = f'{min(years)}-{max(years)}' if len(years) > 1 else str(years[0])
+    source = f"Argopy, {run.section('L0.fetcher').get('mode', 'expert')} mode; {l0_source}"
     coreDS = coreDS.assign_attrs({
-        'title': f'Core float profiles {yrs} with valid data (QC flags 1,2,5,8), masked to open ocean '
-                 'bathymetry (elevation < -1000 m), with an observation above 25 dbar. '
+        'title': f'Core float profiles {yrs} with valid data (QC flags {flags}), masked to open ocean '
+                 f'bathymetry (elevation < {bathy_lim:g} m), with an observation above {surface_max:g} dbar. '
                  f'Interpolated (pchip) to n={len(pres_regular)} pressure levels: 0-1000 dbar every 5 dbar, '
                  '1050-1950 dbar every 50 dbar. '
                  'Includes mixed layer pressure (mlp, dbar) and depth (mld, m) from a 0.03 kg/m3 '
                  'sigma0 threshold relative to 10 dbar.',
         'pressure_levels': 'Pressure levels in dbar: ' + str(pres_regular),
-        'source': 'Argopy, expert mode; GDAC snapshot Jan 2025',
-        'script': os.path.basename(__file__),
+        'source': source,
+        **run.attrs(),
         'descending_casts_dropped': n_desc_total,
         'date': datetag})
 
@@ -171,22 +167,20 @@ def main():
         print(f'Note: {n_dup} prof_datetags are shared by more than one profid')
     coreINDEX = coreINDEX.assign_attrs({
         'title': 'Surface locations of core Argo profiles in coreDATA, masked to open ocean bathymetry '
-                 'where elevation < -1000m. Variables of pressure, CT, SA... represent surfacemost '
+                 f'where elevation < {bathy_lim:g}m. Variables of pressure, CT, SA... represent surfacemost '
                  'observation within the profile.',
-        'source': 'Argopy, expert mode; GDAC snapshot Jan 2025',
-        'script': os.path.basename(__file__),
+        'source': source,
+        **run.attrs(),
         'descending_casts_dropped': n_desc_total,
         'date': datetag})
 
-    os.makedirs(args.outpath, exist_ok=True)
-    data_file = os.path.join(args.outpath, f'coreDATA_byProfid_valid_interp_{yrs}_acc{datetag}.nc')
-    index_file = os.path.join(args.outpath, f'coreINDEX_byProfid_valid_interp_{yrs}_acc{datetag}.nc')
     # Drop encodings inherited from the L2 files (e.g. profid stored as <U13, which would
     # truncate 4-digit cycle numbers like 7900947cyc1029)
     coreDS.drop_encoding().to_netcdf(data_file)
     coreINDEX.drop_encoding().to_netcdf(index_file)
     print(f'Saved {coreDS.sizes["profid"]} profiles to {data_file}')
     print(f'Saved index to {index_file}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
+    run.finish(descending_casts_dropped=n_desc_total)
 
 
 if __name__ == '__main__':

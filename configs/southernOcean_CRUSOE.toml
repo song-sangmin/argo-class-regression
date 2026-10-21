@@ -1,0 +1,112 @@
+# CRUSOE Southern Ocean dataset (2014-2024): the settings and files currently in use.
+#
+# Every [files] entry points at an existing file (as in argoclare/importer.py), so nothing is
+# moved or renamed. Rerunning a stage with this config stops at the first output that already
+# exists, unless --overwrite is passed. To rebuild part of the chain elsewhere, copy this file,
+# change [run] name, and remove the [files] outputs you want written to the new run folder.
+# Only the config copy and provenance/ are written to run_dir.
+
+[run]
+name = "southernOcean_CRUSOE"
+data_root = "/Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata"
+run_dir = "{data_root}/runs/southernOcean_CRUSOE"
+years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+ref_time = "2014-01-01"            # origin of linear_time / yearday (days)
+
+[region]
+box = [-180, 180, -90, -35]        # lon_min, lon_max, lat_min, lat_max
+pres = [0, 2000]                   # dbar
+
+# %% L0: Argopy download (create_L0_raw_argo.py)
+[L0.fetcher]                       # argopy DataFetcher options
+mode = "expert"                    # all data and QC flags; QC is applied in L1
+params = "all"
+parallel = true
+progress = true                    # set false in batch jobs (argopy needs a terminal for it)
+chunks_maxsize = { time = 30 }
+
+[L0.core]
+source = "gdac"
+description = "GDAC snapshot Jan 2025, accessed 20250207"
+
+[L0.bgc]
+source = "erddap"
+description = "Ifremer ERDDAP, accessed 20250219"
+
+# %% L1: QC (create_L1_QC_argo.py)
+[L1]
+use_flags = ["1", "2", "5", "8"]
+core_qc_vars = ["temperature_qc", "salinity_qc", "pressure_qc", "time_qc", "position_qc"]
+bgc_qc_vars = ["pH_qc"]            # added to core_qc_vars for bgc; oxygen_qc is kept, not filtered
+bgc_vars = ["pH", "oxygen"]
+n_jobs = 1                         # years in parallel (core years need a lot of memory)
+
+# %% L2: open ocean mask (create_L2_masked_argo.py) and SOCAT resample
+[L2]
+bathy_lim = -1000                  # keep profiles where GEBCO elevation < bathy_lim (m)
+
+[socat]                            # create_L2_resampled_masked_socat.py
+# The L2 file in use kept yr >= 2014, including 30 samples from 2025 (dropped in P1). The seeded
+# resample only reproduces it with the same years.
+years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
+version = "SOCATv2025"
+doi = "10.25921/648f-fv35"
+site = "https://socat.info/index.php/version-2025/"
+freq = "23.5h"
+gap_hours = 72
+seed = 0
+
+# %% L3: regridding (create_L3_gridded_*.py)
+[L3]
+surface_max = 25                   # keep profiles with a QC'ed observation shallower than this (dbar)
+bgc_vars = ["pH"]
+n_jobs = 8
+
+# %% P1: regression features (create_P1_*_features.py)
+[P1]
+n_jobs = 4
+# seaice_days_before = 7           # also add sea_ice_avg_<N>d
+
+[P1.core]
+years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
+
+[P1.bgc]
+depth = 5                          # SOCCOM averaging depth in the file names (m)
+pco2_var = "pCO2_pHbias5_pK01"
+match_hours = 1
+
+[P1.socat]
+dbar_limit = 500
+window_days = 7
+Lx = 2.5
+
+# %% Files
+[files]
+# External inputs
+gdac = "/Volumes/ocean-repo/202501-ArgoData"
+bathy = "/Volumes/crusoe-repo/data/etopo/gebco_2024_sub_ice_topo/GEBCO_2024_sub_ice_topo.nc"
+socat_raw = "/Users/sangminsong/Library/CloudStorage/OneDrive-UW/Code/CRUSOE/MATLAB-SOCAT/socatv2025_SouthernOceans_DATA.csv"
+soccom_dir = "{data_root}/bgc/ver3-2026"
+mbl_txt = ["/Volumes/crusoe-repo/data/marineboundarylayer/MBL_2014-2020_surfaceco2_GHGreference.625577290_surface.txt",
+           "/Volumes/crusoe-repo/data/marineboundarylayer/MBL_2021-2024_surfaceco2_GHGreference.1615182493_surface.txt"]
+era5_slp = "{data_root}/era5/era5_mean_slp_yr{yr}.nc"
+era5_wind = "{data_root}/era5/era5_wind_speed_{yr}.nc"
+adt = "/Volumes/crusoe-repo/data/copernicusmarine/cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D_adt-sla_179.94W-179.94E_88.94S-35.06S_{yr}-01-01-{yr}-12-31.nc"
+seaice = "/Volumes/crusoe-repo/data/nsidc-seaice/sic_pss25_{yr}0101-{yr}1231_v06r00.nc"
+argopy_cache = "{run_dir}/argopy-cache"
+
+# Pipeline files in use
+L0_profiles_core = "/Volumes/crusoe-repo/data/core/202501snap_yr{yr}_core_profiles_20250207.nc"
+L0_index_core = "/Volumes/crusoe-repo/data/core/202501snap_yr{yr}_core_index_20250207.csv"
+L0_profiles_bgc = "/Volumes/crusoe-repo/data/bgc/ERDDAP_yr{yr}_bgc_profiles_20250219.nc"
+L0_index_bgc = "/Volumes/crusoe-repo/data/bgc/ERDDAP_yr{yr}_bgc_index_20250219.csv"
+L1_core = "{data_root}/core/L1-qc/core_QCflags1258_yr{yr}_acc20260730.csv"
+L1_bgc = "{data_root}/bgc/L1-qc/bgc_QCflags1258_wO2_yr{yr}_acc20260731.csv"
+L2 = "{data_root}/{dataset}/L2-mask/{dataset}_open_ocean_INDEX_{yr}.nc"
+L3_data = "{data_root}/{dataset}/L3-interp/{dataset}DATA_byProfid_valid_interp_2014-2024_acc20261015.nc"
+L3_index = "{data_root}/{dataset}/L3-interp/{dataset}INDEX_byProfid_valid_interp_2014-2024_acc20261015.nc"
+socat_L2 = "{data_root}/socat/SOCATv2025_SO_randomresample23p5h_seed0_open_ocean_INDEX_acc20261016.nc"
+mbl = "/Volumes/crusoe-repo/data/marineboundarylayer/co2_mbl_2014-2024_dataset_combined.nc"
+P1_core = "{data_root}/working-vars/P1-processed/P1_coreArgo_application_features_yr2014-2023_acc20261016.nc"
+P1_bgc = "{data_root}/working-vars/P1-processed/P1_bgcArgo_soccom5m_features_yr2014-2024_acc20261016.nc"
+P1_socat = "{data_root}/working-vars/P1-processed/P1_socatv2025_features_yr2014-2024_acc20261016.nc"
