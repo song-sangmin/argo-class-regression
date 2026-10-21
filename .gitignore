@@ -6,3 +6,8 @@ src/.DS_Store
 # NERSC data and job logs
 x_localdata/
 x_logs/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+# example data cloned by `pixi run get-example-data`
+example-data/

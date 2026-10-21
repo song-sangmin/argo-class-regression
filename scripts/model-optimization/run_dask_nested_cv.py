@@ -46,8 +46,10 @@ def parse_args():
     parser.add_argument('--scoring', default='median_abs_error', help='Inner fold scoring error')
     parser.add_argument('--seed', type=int, default=None,
                         help='Seed for platform fold splits; use the same seed to compare algorithms on identical folds')
-    parser.add_argument('--n-workers', type=int, default=64)
-    parser.add_argument('--threads-per-worker', type=int, default=2)
+    parser.add_argument('--n-workers', type=int, default=None,
+                        help='Dask LocalCluster workers (default: chosen by dask from available CPUs)')
+    parser.add_argument('--threads-per-worker', type=int, default=None,
+                        help='Threads per dask worker (default: chosen by dask from available CPUs)')
     parser.add_argument('--data', default=default_data)
     parser.add_argument('--sea-ice-clusters', type=int, nargs='+', default=sea_ice_clusters,
                         help='Clusters trained with sea_ice as a feature (from regression-input-prep.py)')

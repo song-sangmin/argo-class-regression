@@ -1,0 +1,52 @@
+[workspace]
+authors = ["Scott Henderson <3924836+scottyhq@users.noreply.github.com>",
+           "Sangmin Song <sangsong@uw.edu>"]
+channels = ["conda-forge"]
+name = "argoclare"
+platforms = ["osx-arm64", "linux-64"]
+version = "0.1.0"
+
+[environments]
+dev = ["dev"]
+
+[tasks.get-example-data]
+cmd = "test -d example-data/.git || git clone --depth 1 https://github.com/song-sangmin/argo-class-regression-data.git example-data"
+description = "Download example data for test script."
+# Pixi skips the task when these outputs already exist and are unchanged
+outputs = ["example-data/*.csv"]
+
+[tasks.minimal-example]
+cmd = "python scripts/model-optimization/run_dask_nested_cv.py RFR rfr_test --data example-data/combined_trainval_pc8_gmm6_dbar500_seaiceclusters56_acc20261016.csv --n-outer 2 --n-inner 2 --savepath /tmp/argotest"
+description = "Run a minimal example"
+depends-on = ["get-example-data"]
+
+[dependencies]
+python = ">=3.15.0,<3.16"
+numpy = ">=2.5.4,<3"
+scipy = ">=1.18.1,<2"
+pandas = ">=3.0.6,<4"
+xarray = ">=2026.9.0,<2027"
+netcdf4 = ">=1.7.4,<2"
+scikit-learn = ">=1.9.1,<2"
+joblib = ">=1.6.0,<2"
+xgboost = ">=3.4.2,<4"
+dask = ">=2026.8.0,<2027"
+gsw = ">=3.6.23,<4"
+argopy = ">=1.5.0,<2"
+pyco2sys = ">=1.8.3.4,<2"
+pyproj = ">=3.8.0,<4"
+cartopy = ">=0.26.0,<0.27"
+cmocean = ">=4.0.3,<5"
+matplotlib = ">=3.11.2,<4"
+tqdm = ">=4.70.1,<5"
+
+[pypi-dependencies]
+argoclare = { path = ".", editable = true }
+solarpy = ">=0.1.3, <0.2"
+
+[feature.dev.dependencies]
+jupyterlab = ">=4.6.4,<5"
+sphinx = ">=9.2.0,<10"
+pre-commit = ">=4.7.0,<5"
+nbstripout = ">=0.9.1,<0.10"
+pip = ">=26.2.2,<27"
