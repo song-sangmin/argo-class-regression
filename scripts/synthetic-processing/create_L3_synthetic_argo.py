@@ -5,6 +5,7 @@ L3 files (create_L3_gridded_*.py) so fit_argo_clustering.py and the P1/P2 script
     1. Read the merged synthetic floats (fnum x profnum x nVertLevels). Each fnum is the WMO of
        the real float it follows: bgc = fnums that are SOCCOM floats in the real P1 bgc file,
        core = fnums in the real P1 core file that are not bgc. Other fnums are dropped.
+       ([files] syn_merged, real_P1_soccom, real_P1_core in configs/synthetic_CRUSOE.toml)
     2. Surface (per profile) values from the model: wind stress = hypot(zonal, meridional) and
        wind speed from stress (argoclare oceantools.wind_speed(), solved for all profiles at
        once); pCO2surface == 0 marks missing pco2_ocean, pco2_atmos, delta_pco2 and
@@ -16,19 +17,17 @@ L3 files (create_L3_gridded_*.py) so fit_argo_clustering.py and the P1/P2 script
     5. Regrid CT and SA to the real L3 levels (0-1000 dbar every 5, 1050-1950 every 50) with
        argoclare's regrid_pressure_levels() (pchip, z_gap 1000, surface_fill 25), in parallel
 profid = <fnum>cyc<profnum, 4 digits>; prof_datetag = <fnum>_<YYYYMMDDHH>.
-Writes to working-vars/synthetic/L3-interp/:
-    synthetic_<core|bgc>DATA_byProfid_<years>_acc<datetag>.nc   CT, SA on (profid, pressure)
-    synthetic_<core|bgc>INDEX_byProfid_<years>_acc<datetag>.nc  one row per profid: CT/SA at
+Writes [files] L3_data and L3_index for core and bgc, like the real L3 files:
+    L3_data   CT, SA on (profid, pressure)
+    L3_index  one row per profid: CT/SA at
         5 dbar (from the regridded profile, as 4.3/4.4), mld, mlp, the model surface variables,
         time and position
 
 Usage:
-    python create_L3_synthetic_argo.py
-    python create_L3_synthetic_argo.py --max-floats 20 --outpath /tmp/test/
+    python create_L3_synthetic_argo.py --config ../../configs/synthetic_CRUSOE.toml
+    python create_L3_synthetic_argo.py --config ../../configs/synthetic_CRUSOE.toml --max-floats 20 --out-dir /tmp/test/
 """
-import argparse
 import os
-import sys
 from datetime import datetime
 
 import gsw
@@ -38,12 +37,8 @@ import xarray as xr
 from joblib import Parallel, delayed
 
 import argoclare.argotools as mod_argo
+from argoclare import pipeline
 
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-import argoclare.importer as importer # noqa: E402
-
-default_merged = importer.local_data_folder + 'LIGHT-bgcArgo/synArgo_realworld_matches_merged.nc'
-default_outpath = importer.local_working_folder + 'synthetic/L3-interp/'
 pres_regular = np.arange(0, 1001, 5).tolist() + np.arange(1050, 1951, 50).tolist()
 surface_pressure = 5 # dbar level used for the surface CT/SA in INDEX
 
@@ -148,26 +143,27 @@ def build_dataset(name, ds, fnums, args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--merged', default=default_merged, help='Merged synthetic float netcdf')
-    parser.add_argument('--bgc-p1', default=importer.path_to('P1', 'bgc'), help='Real P1 bgc file (SOCCOM wmoids)')
-    parser.add_argument('--core-p1', default=importer.path_to('P1', 'core'), help='Real P1 core file (core wmoids)')
-    parser.add_argument('--outpath', default=default_outpath)
-    parser.add_argument('--n-jobs', type=int, default=8, help='Parallel workers for regridding')
-    parser.add_argument('--chunk-floats', type=int, default=25, help='Floats per regridding task')
+    parser = pipeline.parser(__doc__)
+    parser.add_argument('--n-jobs', type=int, default=None, help='Parallel workers for regridding (default: [synthetic] n_jobs)')
+    parser.add_argument('--chunk-floats', type=int, default=None, help='Floats per regridding task (default: [synthetic] chunk_floats)')
     parser.add_argument('--max-floats', type=int, default=None, help='Only use the first N floats of each set (testing)')
     args = parser.parse_args()
+    run = pipeline.start(args, __file__)
+    cfg = run.section('synthetic')
+    args.n_jobs = args.n_jobs or cfg.get('n_jobs', 8)
+    args.chunk_floats = args.chunk_floats or cfg.get('chunk_floats', 25)
+    args.merged = run.input('syn_merged')
+    bgc_p1, core_p1 = run.input('real_P1_soccom'), run.input('real_P1_core')
+    outputs = {(name, kind): run.output(f'L3_{kind.lower()}', name) for name in ['bgc', 'core'] for kind in ['DATA', 'INDEX']}
 
     ds = xr.open_dataset(args.merged)
-    bgc_w = set(pd.Series(xr.open_dataset(args.bgc_p1).wmoid.values).astype(int))
-    core_w = set(xr.open_dataset(args.core_p1).wmoid.values.astype(int)) - bgc_w
+    bgc_w = set(pd.Series(xr.open_dataset(bgc_p1).wmoid.values).astype(int))
+    core_w = set(xr.open_dataset(core_p1).wmoid.values.astype(int)) - bgc_w
     fnum = ds.fnum.values
     sets = {'bgc': fnum[np.isin(fnum, list(bgc_w))], 'core': fnum[np.isin(fnum, list(core_w))]}
     print(f'{len(fnum)} synthetic floats: {len(sets["bgc"])} bgc, {len(sets["core"])} core, '
           f'{len(fnum) - len(sets["bgc"]) - len(sets["core"])} matching neither (dropped)')
 
-    os.makedirs(args.outpath, exist_ok=True)
     datetag = datetime.now().strftime('%Y%m%d')
     for name, fnums in sets.items():
         if args.max_floats:
@@ -176,7 +172,7 @@ def main():
         years = pd.to_datetime(INDEX['datetime'].values).year
         yrs = f'{years.min()}-{years.max()}' if years.max() > years.min() else str(years.min())
         attrs = {'source': f'E3SM synthetic Argo ({os.path.basename(args.merged)}), floats following '
-                           f'real {name} Argo WMOs', 'script': os.path.basename(__file__), 'date': datetag,
+                           f'real {name} Argo WMOs', **run.attrs(), 'date': datetag,
                  'qc': 'latitude < -35, atmos_pres_atm > 0.88; pCO2surface == 0 treated as missing'}
         DATA = DATA.assign_attrs({**attrs, 'title': f'Synthetic {name} Argo profiles {yrs}, CT and SA regridded '
                                   f'(pchip) to n={len(pres_regular)} pressure levels as the real L3',
@@ -185,9 +181,10 @@ def main():
                                     'CT/SA, model surface variables (sea_ice, mld, wind_speed, atmos_pres, '
                                     'pco2_ocean, pco2_atmos, delta_pco2, CO2_gas_flux), time and position'})
         for kind, dset in [('DATA', DATA), ('INDEX', INDEX)]:
-            f = os.path.join(args.outpath, f'synthetic_{name}{kind}_byProfid_{yrs}_acc{datetag}.nc')
+            f = outputs[(name, kind)]
             dset.to_netcdf(f)
             print(f'  saved {f}')
+    run.finish()
 
 
 if __name__ == '__main__':

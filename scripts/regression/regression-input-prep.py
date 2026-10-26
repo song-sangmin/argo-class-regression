@@ -1,59 +1,84 @@
-"""Create the regression inputs for the Perlmutter nested CV (model-optimization/): the combined
-training/validation csv, and optionally the matching application csv.
+"""Create the regression inputs for model-optimization/: the combined training/validation csv
+and the application csv, from the P2 datasets of one clustering.
 
-Reads the P2 combined trainval parquet (clustering/apply_P2_clustering.py, or the synthetic
-apply_P2_synthetic_clustering.py) and:
-    1. Renames the class columns to what model-optimization expects: class_assign -> cluster,
+Reads the [regression] train P2 datasets (CRUSOE: soccom, socat; from clustering/apply_P2_classes.py)
+and the application P2 dataset (core), and:
+    1. Combines the train datasets (in the order given) and splits them by year into
+       trainval_years and test_years, written as [files] P2_trainval and P2_test (parquet,
+       class columns as in P2)
+    2. Application set: with exclude_training, drops application profiles that are float
+       training samples (the own profid of a bgcArgo/synBgcArgo sample in the trainval or
+       test set), so it does not overlap the training data; written as [files] P2_application
+    3. Renames the class columns to what model-optimization expects: class_assign -> cluster,
        class{k}_prob -> cluster{k}_prob; adds platform_indexer ('wmoid' for floats,
        'cruiseid' for SOCAT), alongside platform and platform_id
-    2. Finds the sea ice clusters: clusters with more than --min-ice-profiles float samples
-       with sea_ice > --ice-threshold (as in the draft). These are the clusters that keep
-       sea_ice as a feature in model-optimization (sea_ice_clusters in run_dask_nested_cv.py and
-       run_model_application.py); the file name gets a tag such as seaiceclusters56.
-    3. Drops rows missing any feature or the target (--target, default delta_pco2) and exact
-       duplicates; prints counts by cluster and platform
-Writes <outpath>/combined_trainval_<pcm_params>_seaiceclusters<..>_acc<datetag>.csv, indexed by
-sample_key (platform_id + sample time to the minute; unique), the format read by
-run_dask_nested_cv.py (pd.read_csv(..., index_col=0)).
-With --application <P2 core application parquet>, also writes
-<outpath>/coreArgo_application_<pcm_params>_acc<datetag>.csv with the same renames, for
-run_model_application.py --application-data (rows with missing features are dropped).
+    4. Finds the sea ice clusters: clusters with more than min_ice_profiles float samples
+       with sea_ice > ice_threshold (as in the draft). These are the clusters that keep
+       sea_ice as a feature in model-optimization; they are saved in [files] reg_info
+       (json, read by run_dask_nested_cv.py --config) and in {ice_tag} (e.g. seaiceclusters56),
+       which [files] reg_trainval may use in its name.
+    5. Drops trainval rows missing any feature or the target and exact duplicates, and
+       application rows missing a feature; with target_qc_flags, also drops trainval rows whose
+       <target>_qc flag is not one of them (e.g. oxygen, which L1 keeps without QC filtering);
+       prints counts by cluster and platform. The csvs keep the columns model-optimization
+       needs, plus the features and target, and with [regression] cv_type = "profile" a profid
+       column for model-optimization's whole-profile folds.
+Writes [files] reg_trainval (indexed by sample_key: platform_id + sample time to the minute;
+unique), the format read by run_dask_nested_cv.py (pd.read_csv(..., index_col=0)), and
+[files] reg_application (indexed by profid) for run_model_application.py --application-data.
 
 Usage:
-    python regression-input-prep.py                                   # real P2 trainval (importer)
-    python regression-input-prep.py --application <P2_coreArgo_application...parquet>
-    python regression-input-prep.py --trainval <synthetic P2 trainval> --drop-features adt \\
-        --application <P2_synArgo_core_application...parquet> --tag synthetic
-
-    python regression-input-prep.py --trainval /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synthetic_combined_trainval_socat_bgc_2014-2023_acc20261017.parquet --drop-features adt --application /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synArgo_core_application_2014-2023_acc20261016.parquet --tag synthetic
-
+    python regression-input-prep.py --config ../../configs/southernOcean_CRUSOE.toml
+    python regression-input-prep.py --config ../../configs/southernOcean_CRUSOE.toml --n-gmm 7
+    python regression-input-prep.py --config ../../configs/synthetic_CRUSOE.toml
 """
-import argparse
+import json
 import os
-import sys
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-import argoclare.importer as importer # noqa: E402
+from argoclare import pipeline
 
-default_features = ['CT', 'SA', 'log_mld', 'adt', 'sea_ice', 'wind_speed', 'atmos_pres_atm', 'max_solar_rad']
 float_platforms = ['bgcArgo', 'synBgcArgo']
+class_cols = ['class_assign', 'class_profid', 'class_source', 'class_dt_days']
 keep_cols = ['platform', 'platform_id', 'platform_indexer', 'datetime', 'year', 'month', 'day', 'linear_time',
              'latitude', 'longitude', 'CT', 'SA', 'mld', 'log_mld', 'adt', 'sea_ice', 'wind_speed', 'max_solar_rad',
              'atmos_pres_Pa', 'atmos_pres_atm', 'atmos_co2_ppm', 'vapor_pres_atm', 'pco2_ocean', 'pco2_atmos',
              'delta_pco2', 'cluster']
 
 
+def save_parquet(df, path, attrs):
+    """Save as clustering/p2_classes.save_parquet() does (text columns as strings, '' for missing)."""
+    df = df.reset_index(drop=True).copy()
+    for c in [c for c in df.columns if df[c].dtype == object or pd.api.types.is_string_dtype(df[c].dtype)]:
+        df[c] = df[c].where(df[c].notna(), '').astype(str)
+    df.columns = [str(c).replace(' ', '_') for c in df.columns]
+    df.attrs = json.loads(json.dumps(attrs, default=str))
+    df.to_parquet(path, index=False)
+
+
+def prob_columns(df, prefix='class'):
+    return sorted([c for c in df.columns if c.startswith(prefix) and c.endswith('_prob')],
+                  key=lambda c: int(c[len(prefix):-5]))
+
+
+def reorder(df, lead):
+    lead = [c for c in lead if c in df.columns]
+    return df[lead + [c for c in df.columns if c not in lead]]
+
+
+def with_columns(cols, extra):
+    """cols, then any of extra not already in it."""
+    return cols + [c for c in dict.fromkeys(extra) if c not in cols]
+
+
 def rename_classes(df):
     """class_assign -> cluster, class{k}_prob -> cluster{k}_prob; returns df and the prob columns."""
     df = df.rename(columns={'class_assign': 'cluster'})
     df = df.rename(columns={c: 'cluster' + c[5:] for c in df.columns if c.startswith('class') and c.endswith('_prob')})
-    prob_cols = sorted([c for c in df.columns if c.startswith('cluster') and c.endswith('_prob')],
-                       key=lambda c: int(c[7:-5]))
-    return df, prob_cols
+    return df, prob_columns(df, 'cluster')
 
 
 def add_sample_key(df):
@@ -81,58 +106,131 @@ def find_sea_ice_clusters(df, n_clusters, threshold, min_profiles):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--trainval', default=importer.path_to('P2', 'trainval'), help='P2 combined trainval parquet')
-    parser.add_argument('--application', default=None, help='P2 core application parquet (optional)')
-    parser.add_argument('--features', nargs='+', default=default_features, help='Regression features')
-    parser.add_argument('--drop-features', nargs='+', default=[], help='Features to leave out (e.g. adt for synthetic)')
-    parser.add_argument('--target', default='delta_pco2')
-    parser.add_argument('--ice-threshold', type=float, default=0.1, help='sea_ice above this counts as an ice sample')
-    parser.add_argument('--min-ice-profiles', type=int, default=10, help='Ice samples needed to call a cluster a sea ice cluster')
-    parser.add_argument('--tag', default='', help='Extra tag for the file names (e.g. synthetic)')
-    parser.add_argument('--outpath', default=importer.local_working_folder + 'regression-inputs/')
+    parser = pipeline.add_pcm_args(pipeline.parser(__doc__))
     args = parser.parse_args()
+    run = pipeline.start(args, __file__)
+    cfg = run.section('regression')
+    feat_list = [f for f in cfg['features'] if f not in cfg.get('drop_features', [])]
+    target = cfg.get('target', 'delta_pco2')
+    splits = [('trainval', cfg['trainval_years'])] + ([('test', cfg['test_years'])] if cfg.get('test_years') else [])
+    train_files = [run.input('P2', ds) for ds in cfg['train']]
+    app_file = run.input('P2', cfg['application']) if cfg.get('application') else None
 
-    feat_list = [f for f in args.features if f not in args.drop_features]
-    trainval = pd.read_parquet(args.trainval)
-    pcm_params = trainval.attrs.get('pcm_params', 'pcm')
+    # ===== 1. Training data: combine the train datasets, split by year
+    parts = [pd.read_parquet(f) for f in train_files]
+    p2_attrs = parts[0].attrs
+    pcm_params = p2_attrs.get('pcm_params', run.pcm)
+    combined = pd.concat(parts, ignore_index=True)
+    combined['year'] = combined['datetime'].dt.year
+    prob_cols = prob_columns(combined)
+    combined = reorder(combined, ['platform', 'platform_id', 'sample_id', 'datetime', 'year', 'latitude', 'longitude',
+                                  'pco2_ocean', 'pco2_atmos', 'delta_pco2'] + prob_cols + class_cols)
+    split_dfs = {name: combined[combined['year'].isin(years)].reset_index(drop=True) for name, years in splits}
+
+    # Sea ice clusters from the trainval samples (decides the reg_trainval {ice_tag})
+    trainval, _ = rename_classes(split_dfs['trainval'])
+    print(f'{", ".join(os.path.basename(f) for f in train_files)}: {len(trainval)} trainval samples, '
+          f'{len(prob_cols)} clusters ({pcm_params})')
+    print('Features:', feat_list, '| target:', target)
+    sea_ice_clusters = find_sea_ice_clusters(trainval, len(prob_cols), cfg.get('ice_threshold', 0.1),
+                                             cfg.get('min_ice_profiles', 10))
+    ice_tag = 'seaiceclusters' + ''.join(str(k) for k in sea_ice_clusters)
+
+    # Check every output before writing any
+    split_files = {name: run.output(f'P2_{name}') for name, _ in splits}
+    reg_file, info_file = run.output('reg_trainval', ice_tag=ice_tag), run.output('reg_info')
+    app_out = (run.output('P2_application'), run.output('reg_application', ice_tag=ice_tag)) if app_file else None
+
+    datetag = datetime.now().strftime('%Y%m%d')
+    common = {'pcm_params': pcm_params, 'pcm_finder': p2_attrs.get('pcm_finder', ''),
+              'class_numbering': p2_attrs.get('class_numbering', ''), **run.attrs(), 'date': datetag}
+    for name, years in splits:
+        tag = f'{min(years)}-{max(years)}' if len(years) > 1 else str(years[0])
+        save_parquet(split_dfs[name], split_files[name], {
+            **common,
+            'title': f'P2 {name} dataset {tag}: {" and ".join(cfg["train"])} P1 samples with GMM class probabilities; '
+                     'samples without a class dropped.',
+            'p2_inputs': ', '.join(os.path.basename(f) for f in train_files),
+            'gapfill': '; '.join(p.attrs.get('gapfill', '') for p in parts),
+            'counts_all_years': {p['platform'].iloc[0] if len(p) else ds: p.attrs.get('counts', {})
+                                 for ds, p in zip(cfg['train'], parts)}})
+        by_class = split_dfs[name].groupby(['class_assign', 'platform']).size().unstack(fill_value=0)
+        print(f'\n{name} {tag}: {len(split_dfs[name])} samples -> {split_files[name]}\n{by_class.to_string()}')
+
+    # ===== 2. Application set, without the float training samples
+    if app_file:
+        app = pd.read_parquet(app_file)
+        app_attrs, n_app, n_excluded = dict(app.attrs), len(app), 0
+        if cfg.get('exclude_training', True):
+            train = set() # own profids of float training samples (trainval and test)
+            for d in split_dfs.values():
+                if 'profid' in d.columns:
+                    train |= set(d.loc[d['platform'].isin(float_platforms), 'profid'].dropna()) - {''}
+            drop = app['profid'].isin(train)
+            n_excluded = int(drop.sum())
+            print(f'\nExcluding {n_excluded} application profiles that are float training samples')
+            app = app[~drop].copy()
+        app['year'] = app['datetime'].dt.year
+        app = reorder(app, ['profid', 'platform', 'platform_id', 'sample_id', 'datetime', 'year', 'latitude',
+                            'longitude'] + prob_columns(app) + class_cols)
+        first, last = app['year'].min(), app['year'].max()
+        yrs = f'{first}-{last}' if last > first else str(first)
+        save_parquet(app, app_out[0], {
+            **common,
+            'title': f'P2 {cfg["application"]} application dataset {yrs}: P1 profiles with GMM class probabilities; '
+                     'profiles without a class dropped' + ('; training profiles excluded.' if n_excluded else '.'),
+            'p2_input': os.path.basename(app_file),
+            'gapfill': app_attrs.get('gapfill', ''),
+            'excluded_training_from': ', '.join(os.path.basename(f) for f in split_files.values()),
+            'counts': {**app_attrs.get('counts', {}), 'excluded_training': n_excluded}})
+        print(f'{len(app)} of {n_app} application profiles -> {app_out[0]}')
+
+    # ===== 3-5. Regression csvs, from the saved parquet files
+    trainval = pd.read_parquet(split_files['trainval'])
     trainval, prob_cols = rename_classes(trainval)
-    n_clusters = len(prob_cols)
     trainval['platform_indexer'] = np.where(trainval['platform'].isin(float_platforms), 'wmoid', 'cruiseid')
-    print(f'{os.path.basename(args.trainval)}: {len(trainval)} samples, {n_clusters} clusters ({pcm_params})')
-    print('Features:', feat_list, '| target:', args.target)
-
-    sea_ice_clusters = find_sea_ice_clusters(trainval, n_clusters, args.ice_threshold, args.min_ice_profiles)
-
+    group_cols = []
+    if cfg.get('cv_type') == 'profile':
+        # model-optimization folds of whole profiles group by profid; samples without one
+        # (ship data, SOCCOM samples without a matched profile) are their own group
+        pid = trainval['profid'].astype(str) if 'profid' in trainval.columns else pd.Series('', index=trainval.index)
+        trainval['profid'] = pid.where(~pid.isin(['', 'nan', 'None']), trainval['sample_id'].astype(str))
+        group_cols = ['profid']
     n = len(trainval)
-    cols = [c for c in keep_cols if c in trainval.columns] + prob_cols
-    trainval = trainval.dropna(subset=feat_list + [args.target])[cols].drop_duplicates()
-    print(f'\nDropped {n - len(trainval)} samples missing a feature or {args.target} (or duplicated); {len(trainval)} left')
+    if cfg.get('target_qc_flags'):
+        qc = trainval[f'{target}_qc'].astype(str).str.replace(r'\.0$', '', regex=True)
+        bad = ~qc.isin([str(x) for x in cfg['target_qc_flags']])
+        print(f'\nDropping {int(bad.sum())} samples with {target}_qc not in {cfg["target_qc_flags"]}')
+        trainval = trainval[~bad]
+        n = len(trainval)
+    cols = with_columns([c for c in keep_cols if c in trainval.columns], feat_list + [target] + group_cols) + prob_cols
+    trainval = trainval.dropna(subset=feat_list + [target])[cols].drop_duplicates()
+    print(f'\nDropped {n - len(trainval)} samples missing a feature or {target} (or duplicated); {len(trainval)} left')
     trainval = add_sample_key(trainval)
     counts = trainval.groupby(['cluster', 'platform']).size().unstack(fill_value=0)
     print(f'\nSamples by cluster and platform:\n{counts.to_string()}')
+    trainval.to_csv(reg_file)
+    print(f'\nSaved {len(trainval)} samples to {reg_file}')
 
-    os.makedirs(args.outpath, exist_ok=True)
-    datetag = datetime.now().strftime('%Y%m%d')
-    tag = f'_{args.tag}' if args.tag else ''
-    ice_tag = 'seaiceclusters' + ''.join(str(k) for k in sea_ice_clusters)
-    savefile = os.path.join(args.outpath, f'combined_trainval{tag}_{pcm_params}_{ice_tag}_acc{datetag}.csv')
-    trainval.to_csv(savefile)
-    print(f'\nSaved {len(trainval)} samples to {savefile}')
-    print(f'Set in model-optimization/run_*.py: sea_ice_clusters = {sea_ice_clusters}; feat_list = {feat_list}')
-
-    if args.application:
-        app = pd.read_parquet(args.application)
+    info = {'pcm_params': pcm_params, 'sea_ice_clusters': sea_ice_clusters, 'features': feat_list,
+            'drop_features': cfg.get('drop_features', []), 'target': target,
+            'trainval_file': os.path.basename(reg_file), 'n_trainval': len(trainval), **run.attrs(), 'date': datetag}
+    if app_file:
+        app = pd.read_parquet(app_out[0])
         app, app_probs = rename_classes(app)
         assert app_probs == prob_cols, 'application and trainval have different clusters'
         app['platform_indexer'] = 'wmoid'
         n = len(app)
-        cols = ['profid'] + [c for c in keep_cols if c in app.columns] + prob_cols
+        cols = ['profid'] + with_columns([c for c in keep_cols if c in app.columns],
+                                         [c for c in feat_list + [target] if c in app.columns]) + prob_cols
         app = app.dropna(subset=feat_list)[cols].set_index('profid')
-        appfile = os.path.join(args.outpath, f'coreArgo_application{tag}_{pcm_params}_acc{datetag}.csv')
-        app.to_csv(appfile)
-        print(f'Saved {len(app)} application profiles ({n - len(app)} dropped for missing features) to {appfile}')
+        app.to_csv(app_out[1])
+        print(f'Saved {len(app)} application profiles ({n - len(app)} dropped for missing features) to {app_out[1]}')
+        info.update({'application_file': os.path.basename(app_out[1]), 'n_application': len(app)})
+    with open(info_file, 'w') as f:
+        json.dump(info, f, indent=2)
+    print(f'Sea ice clusters {sea_ice_clusters} and features saved to {info_file} (read by model-optimization --config)')
+    run.finish(sea_ice_clusters=sea_ice_clusters)
 
 
 if __name__ == '__main__':

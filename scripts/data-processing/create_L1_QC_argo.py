@@ -24,8 +24,7 @@ import xarray as xr
 from joblib import Parallel, delayed
 
 import argoclare.argotools as mod_argo
-
-import pipeline
+from argoclare import pipeline
 
 
 def process_year(yr, l0_file, savefile, bgc_list, qc_vars, use_flags, floats=None):

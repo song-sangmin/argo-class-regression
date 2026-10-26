@@ -26,8 +26,7 @@ import pandas as pd
 import xarray as xr
 
 import argoclare.oceantools as mod_ocean
-
-import pipeline
+from argoclare import pipeline
 
 
 def read_socat(path, years, in_box, ref_time, max_cruises=None):

@@ -1,6 +1,6 @@
 """Create the synthetic P2 training/validation dataset: GMM classes for synthetic bgc floats and SOCAT.
 
-Synthetic counterpart of clustering/apply_P2_clustering.py (the synthetic core application
+Synthetic counterpart of clustering/apply_P2_classes.py for soccom + socat (the synthetic core application
 dataset is made by apply_P2_synthetic_synCore_clustering.py).
 Uses a PCM_finder fitted on the synthetic L3 profiles with clustering/fit_argo_clustering.py
 (same parameters as the real data, e.g. pc8_gmm6_dbar500), and the shared steps in
@@ -8,30 +8,25 @@ clustering/p2_classes.py:
     synthetic bgc floats (platform 'synBgcArgo'):
         each sample is a profile and takes the class of its own profid; profiles that were not
         fit are filled from the same float's classified profiles just before and just after,
-        within --float-days (12) days (both must agree; nearest in time)
+        within [P2] float_gapfill_days (12) days (both must agree; nearest in time)
     synthetic SOCAT ('synSOCAT'): the class of its nearest_profid from P1 (the nearest
         clusterable synthetic profile within 7 days); samples whose nearest profile has no
-        class are filled from the same cruise's classified samples within --ship-days (1.5)
+        class are filled from the same cruise's classified samples within [P2] ship_gapfill_days (1.5)
 Samples still without a class are dropped (counts printed and stored in df.attrs).
 Subsampling by year (so the synthetic training data is sampled like the real data): for each
-year, keep a random --seed subset of the classified synthetic bgc profiles with as many samples
-as real SOCCOM samples in the real P2 trainval file (--real-trainval); years with fewer
+year, keep a random ([synthetic] subsample_seed) subset of the classified synthetic bgc profiles with as many samples
+as real SOCCOM samples in the real P2 trainval file ([files] real_P2_trainval); years with fewer
 synthetic profiles keep them all. Counts by year are printed and stored in df.attrs.
 Synthetic SOCAT is already sampled at the real SOCAT samples (build_socatINDEX.py), so it is
 not subsampled. --no-subsample keeps every classified synthetic bgc profile.
 Adds platform_id (wmoid or cruiseid), sample_id (prof_datetag or sample_datetag) and the class
 columns from p2_classes.py; all P1 columns are kept (empty where a column does not apply).
-Writes parquet files (run parameters, inputs and counts in df.attrs) to the PCM_finder's folder:
-    P2_synthetic_combined_trainval_socat_bgc_<years>_acc<datetag>.parquet  (synBgcArgo + synSOCAT)
+Reads [files] P2_finder, P1_bgc and P1_socat, and writes [files] P2_syn_trainval (parquet; run
+parameters, inputs and counts in df.attrs), the training data for regression-input-prep.py.
 
 Usage:
-    python apply_P2_synthetic_clustering.py --pcm-finder <synthetic PCM_finder parquet> \\
-        --bgc-p1 <P1_synArgo_bgc...nc> --socat-p1 <P1_synSOCAT...nc>
-
-
-    python apply_P2_synthetic_clustering.py --pcm-finder /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/PCM_finder_pc8_gmm6_dbar500_acc20261016.parquet --bgc-p1 /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P1-processed/P1_synArgo_bgc_features_yr2014-2023_acc20261016.nc --socat-p1 /Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/working-vars/synthetic/P1-processed/P1_synSOCAT_features_yr2014-2023_acc20261016.nc
+    python apply_P2_synthetic_clustering.py --config ../../configs/synthetic_CRUSOE.toml
 """
-import argparse
 import os
 import sys
 from datetime import datetime
@@ -39,10 +34,9 @@ from datetime import datetime
 import pandas as pd
 import xarray as xr
 
-scripts_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-sys.path.append(scripts_folder)
-sys.path.append(os.path.join(scripts_folder, 'clustering'))
-import argoclare.importer as importer # noqa: E402
+from argoclare import pipeline
+
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'clustering'))
 import p2_classes # noqa: E402
 
 
@@ -106,26 +100,21 @@ def years_tag(df):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--pcm-finder', required=True, help='Synthetic PCM_finder parquet')
-    parser.add_argument('--bgc-p1', required=True, help='Synthetic P1 bgc netcdf')
-    parser.add_argument('--socat-p1', required=True, help='Synthetic P1 SOCAT netcdf')
-    parser.add_argument('--float-days', type=float, default=12, help='Gap-fill window for float samples (days)')
-    parser.add_argument('--ship-days', type=float, default=1.5, help='Gap-fill window for SOCAT samples (days)')
-    parser.add_argument('--real-trainval', default=importer.path_to('P2', 'trainval'),
-                        help='Real P2 combined trainval parquet (SOCCOM sample counts by year)')
-    parser.add_argument('--seed', type=int, default=0, help='Random seed for the yearly subsample')
+    parser = pipeline.add_pcm_args(pipeline.parser(__doc__))
     parser.add_argument('--no-subsample', action='store_true', help='Keep every classified synthetic bgc profile')
-    parser.add_argument('--outpath', default=None, help='Output folder (default: the PCM_finder folder)')
     args = parser.parse_args()
+    run = pipeline.start(args, __file__)
+    args.float_days = run.p2.get('float_gapfill_days', 12)
+    args.ship_days = run.p2.get('ship_gapfill_days', 1.5)
+    args.seed = run.section('synthetic').get('subsample_seed', 0)
+    args.pcm_finder, args.bgc_p1, args.socat_p1 = run.input('P2_finder'), run.input('P1', 'bgc'), run.input('P1', 'socat')
+    args.real_trainval = None if args.no_subsample else run.input('real_P2_trainval')
+    savefile = run.output('P2', 'syn_trainval')
 
     finder, prob_cols, meta = p2_classes.read_finder(args.pcm_finder)
-    outpath = args.outpath or os.path.dirname(os.path.abspath(args.pcm_finder))
-    os.makedirs(outpath, exist_ok=True)
     datetag = datetime.now().strftime('%Y%m%d')
     common = {'pcm_params': meta.get('pcm_params', ''), 'pcm_finder': os.path.basename(args.pcm_finder),
-              'class_numbering': meta.get('class_numbering', ''), 'script': os.path.basename(__file__),
+              'class_numbering': meta.get('class_numbering', ''), **run.attrs(),
               'date': datetag}
 
     # ===== Training/validation: synthetic bgc floats + synthetic SOCAT
@@ -147,7 +136,6 @@ def main():
     ship, ship_counts = classify_socat(args.socat_p1, finder, prob_cols, args)
     trainval = finish(pd.concat([bgc, ship], ignore_index=True), prob_cols)
     yrs = years_tag(trainval)
-    savefile = os.path.join(outpath, f'P2_synthetic_combined_trainval_socat_bgc_{yrs}_acc{datetag}.parquet')
     p2_classes.save_parquet(trainval, savefile, {
         **common,
         'title': f'P2 synthetic trainval dataset {yrs}: synthetic bgc floats (synBgcArgo) and synthetic SOCAT '
@@ -159,6 +147,7 @@ def main():
         'counts': {'synBgcArgo': bgc_counts, 'synSOCAT': ship_counts}})
     by_class = trainval.groupby(['class_assign', 'platform']).size().unstack(fill_value=0)
     print(f'\ntrainval {yrs}: {len(trainval)} samples -> {savefile}\n{by_class.to_string()}')
+    run.finish(counts={'synBgcArgo': bgc_counts, 'synSOCAT': ship_counts})
 
 
 if __name__ == '__main__':

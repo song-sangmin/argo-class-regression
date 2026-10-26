@@ -29,8 +29,8 @@ import xarray as xr
 from joblib import Parallel, delayed
 
 import argoclare.argotools as mod_argo
+from argoclare import pipeline
 
-import pipeline
 
 pres_regular = np.arange(0, 1001, 5).tolist() + np.arange(1050, 1951, 50).tolist()
 read_cols = ['profid', 'pressure', 'wmoid', 'cycle_number', 'latitude', 'longitude', 'datetime',

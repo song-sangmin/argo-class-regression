@@ -1,23 +1,21 @@
 """Create the synthetic core Argo application dataset: GMM classes for the synthetic core P1 profiles.
 
-Synthetic counterpart of clustering/apply_P2_core_clustering.py: the file the trained models are
+Synthetic counterpart of clustering/apply_P2_classes.py --dataset core: the file the trained models are
 applied to in the synthetic experiment. Uses a PCM_finder fitted on the synthetic L3 profiles with
 clustering/fit_argo_clustering.py and the shared steps in clustering/p2_classes.py:
     Each synthetic core profile (platform 'synCoreArgo') takes the class probabilities of its own
     profid. Profiles that were not fit (missing CT or SA at a level above the fit's dbar_limit)
     are filled from the same float's classified profiles just before and just after, within
-    --float-days (12) days (both must agree; nearest in time). Profiles still without a class
+    [P2] float_gapfill_days (12) days (both must agree; nearest in time). Profiles still without a class
     are dropped (counts printed and stored in df.attrs).
 Adds platform_id (wmoid), sample_id (prof_datetag) and the class columns from p2_classes.py;
-all P1 columns (model features, pco2_ocean as the synthetic truth) are kept. Writes one parquet
-file (run parameters, inputs and counts in df.attrs) to the PCM_finder's folder:
-    P2_synArgo_core_application_<years>_acc<datetag>.parquet
+all P1 columns (model features, pco2_ocean as the synthetic truth) are kept. Reads [files]
+P2_finder and P1_core, and writes [files] P2_core (parquet; run parameters, inputs and counts
+in df.attrs), the application set for regression-input-prep.py.
 
 Usage:
-    python apply_P2_synthetic_synCore_clustering.py --pcm-finder <synthetic PCM_finder parquet> \\
-        --core-p1 <P1_synArgo_core_application...nc>
+    python apply_P2_synthetic_synCore_clustering.py --config ../../configs/synthetic_CRUSOE.toml
 """
-import argparse
 import os
 import sys
 from datetime import datetime
@@ -25,19 +23,19 @@ from datetime import datetime
 import pandas as pd
 import xarray as xr
 
-scripts_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-sys.path.append(os.path.join(scripts_folder, 'clustering'))
+from argoclare import pipeline
+
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'clustering'))
 import p2_classes # noqa: E402
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--pcm-finder', required=True, help='Synthetic PCM_finder parquet')
-    parser.add_argument('--core-p1', required=True, help='Synthetic P1 core application netcdf')
-    parser.add_argument('--float-days', type=float, default=12, help='Gap-fill window (days)')
-    parser.add_argument('--outpath', default=None, help='Output folder (default: the PCM_finder folder)')
+    parser = pipeline.add_pcm_args(pipeline.parser(__doc__))
     args = parser.parse_args()
+    run = pipeline.start(args, __file__)
+    args.float_days = run.p2.get('float_gapfill_days', 12)
+    args.pcm_finder, args.core_p1 = run.input('P2_finder'), run.input('P1', 'core')
+    savefile = run.output('P2', 'core')
 
     finder, prob_cols, meta = p2_classes.read_finder(args.pcm_finder)
 
@@ -57,10 +55,7 @@ def main():
 
     first, last = core['year'].min(), core['year'].max()
     yrs = f'{first}-{last}' if last > first else str(first)
-    outpath = args.outpath or os.path.dirname(os.path.abspath(args.pcm_finder))
-    os.makedirs(outpath, exist_ok=True)
     datetag = datetime.now().strftime('%Y%m%d')
-    savefile = os.path.join(outpath, f'P2_synArgo_core_application_{yrs}_acc{datetag}.parquet')
     p2_classes.save_parquet(core, savefile, {
         'title': f'P2 synthetic core Argo application dataset {yrs}: synthetic core profiles with model '
                  'features and GMM class probabilities (GMM fit on synthetic profiles); unclassified dropped.',
@@ -70,8 +65,9 @@ def main():
         'gapfill': f'nearest classified profile of the same float (<{args.float_days:g} d), before/after must agree',
         'p1_input': os.path.basename(args.core_p1),
         'counts': {'profiles': n_core, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n_core - len(core)},
-        'script': os.path.basename(__file__), 'date': datetag})
+        **run.attrs(), 'date': datetag})
     print(f'\n{len(core)} profiles -> {savefile}\n{core["class_assign"].value_counts().sort_index().to_string()}')
+    run.finish()
 
 
 if __name__ == '__main__':

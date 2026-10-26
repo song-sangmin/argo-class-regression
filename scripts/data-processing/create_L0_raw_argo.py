@@ -27,7 +27,7 @@ from datetime import datetime
 import argopy
 from argopy import DataFetcher
 
-import pipeline
+from argoclare import pipeline
 
 
 def fetch_year(yr, ds, box, pres, fetcher_kwargs):

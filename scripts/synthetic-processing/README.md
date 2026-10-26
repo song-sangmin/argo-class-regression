@@ -6,18 +6,25 @@ Each output has the same layout as its real-data equivalent, so the shared code
 and the SOCAT colocation in `data-processing/create_P1_socat_features.py`) runs on it unchanged.
 Replaces notebooks 4.2, 4.4 and the synthetic float part of 4.3.
 
-Run in order (paths relative to `PKG-argo-clare/scripts/`; outputs in `x_localdata/working-vars/synthetic/`):
+Every script takes `--config configs/synthetic_CRUSOE.toml`, which lists the synthetic inputs and
+outputs (and the real files the synthetic floats are matched to). Run in order, from `PKG-argo-clare/scripts/`:
 
-| Step | Command | Output |
-|---|---|---|
-| L3 | `python synthetic-processing/create_L3_synthetic_argo.py` | `L3-interp/synthetic_{core,bgc}{DATA,INDEX}_byProfid_<years>_acc<date>.nc` |
-| P1 floats | `python synthetic-processing/create_P1_synthetic_features.py --bgc-index <bgc INDEX> --core-index <core INDEX>` | `P1-processed/P1_synArgo_{bgc,core_application}_features_yr<years>_acc<date>.nc` |
-| P1 SOCAT | `python synthetic-processing/create_P1_synthetic_socat.py --indexes <core INDEX> <bgc INDEX> --datas <core DATA> <bgc DATA>` | `P1-processed/P1_synSOCAT_features_yr<years>_acc<date>.nc` |
-| fit | `python clustering/fit_argo_clustering.py --core <core DATA> <core INDEX> --bgc <bgc DATA> <bgc INDEX> --outpath <working-vars>/synthetic/P2-clustered/` | `P2-clustered/pc8_gmm6_dbar500/PCM_finder_..._acc<date>.parquet` (+ `PCM_fit_...json`) |
-| P2 trainval | `python synthetic-processing/apply_P2_synthetic_clustering.py --pcm-finder <PCM_finder> --bgc-p1 <P1 bgc> --socat-p1 <P1 SOCAT>` | `P2-clustered/pc8_gmm6_dbar500/P2_synthetic_combined_trainval_socat_bgc_<years>_acc<date>.parquet` |
-| P2 application | `python synthetic-processing/apply_P2_synthetic_synCore_clustering.py --pcm-finder <PCM_finder> --core-p1 <P1 core>` | `P2-clustered/pc8_gmm6_dbar500/P2_synArgo_core_application_<years>_acc<date>.parquet` |
+```bash
+C=../configs/synthetic_CRUSOE.toml
+python synthetic-processing/create_L3_synthetic_argo.py --config $C        # L3_data, L3_index (core, bgc)
+python synthetic-processing/create_P1_synthetic_features.py --config $C    # P1_bgc, P1_core
+python synthetic-processing/create_P1_synthetic_socat.py --config $C       # P1_socat
+python clustering/fit_argo_clustering.py --config $C                       # P2_finder: GMM refit on the synthetic profiles
+python synthetic-processing/apply_P2_synthetic_clustering.py --config $C   # P2_syn_trainval (synBgcArgo + synSOCAT)
+python synthetic-processing/apply_P2_synthetic_synCore_clustering.py --config $C   # P2_core (application set)
+python regression/regression-input-prep.py --config $C                     # regression csvs (no adt; sea ice clusters in reg_info)
+```
 
-The synthetic SOCAT input (`synSOCAT-daily_matches.nc`) comes from `PKG-synthetic-extract/extract_SOCAT.py`.
+The files in use (pc8_gmm6_dbar500) are listed in the config, so each step stops before overwriting
+them unless `--overwrite` is passed. On 2026-10-21, the last three steps reproduced the files in use
+exactly (the P2 parquet files, and both regression csvs byte for byte).
+
+The synthetic SOCAT input (`[files] syn_socat`) comes from `PKG-synthetic-extract/extract_SOCAT.py`.
 
 Notes
 - Core vs bgc: a synthetic float follows a real WMO (`fnum`); bgc = SOCCOM WMOs in the real P1 bgc

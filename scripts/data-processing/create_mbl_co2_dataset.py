@@ -19,7 +19,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-import pipeline
+from argoclare import pipeline
+
 
 sin_lat = np.round(np.arange(-1.00, -0.499, 0.05), 2)
 

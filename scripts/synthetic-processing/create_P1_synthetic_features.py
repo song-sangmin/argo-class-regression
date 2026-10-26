@@ -7,14 +7,13 @@ shallowest model level. This adds, with the same functions as the real P1 data (
     time:  year, month, day, linear_time (days since 2014-01-01), ydcos, ydsin, decimalyr
     ocean: max_solar_rad (clear-sky, from time and latitude), log_mld
 There is no ADT (the model output has no sea surface height). Years run in parallel.
-Writes netcdfs along profid (longitude -180 to 180) to working-vars/synthetic/P1-processed/:
-    P1_synArgo_bgc_features_yr<years>_acc<datetag>.nc               (platform 'synBgcArgo')
-    P1_synArgo_core_application_features_yr<years>_acc<datetag>.nc  (platform 'synCoreArgo')
+Reads [files] L3_index for bgc and core, and writes netcdfs along profid (longitude -180 to 180):
+    [files] P1_bgc   (platform 'synBgcArgo')
+    [files] P1_core  (platform 'synCoreArgo')
 
 Usage:
-    python create_P1_synthetic_features.py --bgc-index <synthetic_bgcINDEX...nc> --core-index <synthetic_coreINDEX...nc>
+    python create_P1_synthetic_features.py --config ../../configs/synthetic_CRUSOE.toml
 """
-import argparse
 import os
 import sys
 from datetime import datetime
@@ -25,60 +24,54 @@ import xarray as xr
 from joblib import Parallel, delayed
 
 import argoclare.oceantools as mod_ocean
+from argoclare import pipeline
 
-scripts_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-sys.path.append(scripts_folder)
-sys.path.append(os.path.join(scripts_folder, 'data-processing'))
-import argoclare.importer as importer # noqa: E402
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data-processing'))
 import p1_features # noqa: E402
 
-default_outpath = importer.local_working_folder + 'synthetic/P1-processed/'
 
-
-def process_year(yearDF, yr):
-    df = p1_features.add_time_vars(yearDF)
+def process_year(yearDF, yr, ref_time):
+    df = p1_features.add_time_vars(yearDF, ref_time)
     df = p1_features.add_solar_radiation(df)
     df['log_mld'] = np.log(df['mld'])
     print(f'  {yr}: {len(df)} profiles')
     return df
 
 
-def make_p1(index_file, platform, n_jobs):
+def make_p1(index_file, platform, n_jobs, ref_time):
     df = xr.open_dataset(index_file).to_dataframe().reset_index()
     df['datetime'] = pd.to_datetime(df['datetime'])
     df = mod_ocean.set_longitude_range(df, end_type='180')
-    parts = Parallel(n_jobs=n_jobs)(delayed(process_year)(g, yr) for yr, g in df.groupby(df.datetime.dt.year))
+    parts = Parallel(n_jobs=n_jobs)(delayed(process_year)(g, yr, ref_time) for yr, g in df.groupby(df.datetime.dt.year))
     df = pd.concat(parts).sort_values(['wmoid', 'datetime']).reset_index(drop=True)
     df['platform'] = platform
     return df
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--bgc-index', required=True, help='Synthetic bgc L3 INDEX netcdf')
-    parser.add_argument('--core-index', required=True, help='Synthetic core L3 INDEX netcdf')
-    parser.add_argument('--outpath', default=default_outpath)
-    parser.add_argument('--n-jobs', type=int, default=4, help='Years to process in parallel')
+    parser = pipeline.parser(__doc__)
+    parser.add_argument('--n-jobs', type=int, default=None, help='Years to process in parallel (default: [P1] n_jobs)')
     args = parser.parse_args()
+    run = pipeline.start(args, __file__)
+    n_jobs = args.n_jobs or run.section('P1').get('n_jobs', 4)
+    jobs = [(name, run.input('L3_index', name), platform, run.output('P1', name))
+            for name, platform in [('bgc', 'synBgcArgo'), ('core', 'synCoreArgo')]]
 
-    os.makedirs(args.outpath, exist_ok=True)
     datetag = datetime.now().strftime('%Y%m%d')
-    for name, index_file, platform, tag in [('bgc', args.bgc_index, 'synBgcArgo', 'bgc'),
-                                            ('core', args.core_index, 'synCoreArgo', 'core_application')]:
+    for name, index_file, platform, savefile in jobs:
         print(f'===> {name}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
-        df = make_p1(index_file, platform, args.n_jobs)
+        df = make_p1(index_file, platform, n_jobs, run.ref_time)
         first, last = df.datetime.dt.year.min(), df.datetime.dt.year.max()
         yrs = f'{first}-{last}' if last > first else str(first)
-        savefile = os.path.join(args.outpath, f'P1_synArgo_{tag}_features_yr{yrs}_acc{datetag}.nc')
         p1_features.save_netcdf(df, 'profid', savefile, {
             'title': f'P1 synthetic {name} Argo dataset {yrs}: model (E3SM) surface variables and '
                      'regression features at each synthetic profile (one row per profid).',
             'source': os.path.basename(index_file),
             'features': 'sea_ice, mld, wind_speed, atmos_pres, pco2 from the model; time variables, '
                         'max_solar_rad and log_mld added; no ADT',
-            'script': os.path.basename(__file__), 'date': datetag})
+            **run.attrs(), 'date': datetag})
         print(f'  saved {len(df)} profiles to {savefile}')
+    run.finish()
 
 
 if __name__ == '__main__':

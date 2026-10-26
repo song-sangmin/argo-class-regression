@@ -1,24 +1,26 @@
-"""Create the P1 BGC Argo (SOCCOM) dataset: regression features for each surface average sample.
+"""Create the P1 SOCCOM dataset: regression features for each SOCCOM/GO-BGC surface average sample.
 
 Replaces the feature steps of 1.2_P1_bgcArgo_feature_prep.ipynb, one row per SOCCOM sample:
     1. Read the SOCCOM/GO-BGC surface averages in [files] soccom_dir (var_pK1_<depth>_<wmo>.mat,
-       [P1.bgc] depth = 5 m) as in data_loader.import_soccom_20m_averages(), and keep samples
-       in the [region] box during the run years ([P1.bgc] years, else [run] years). Samples
+       [P1.soccom] depth = 5 m) as in data_loader.import_soccom_20m_averages(), and keep samples
+       in the [region] box during the run years ([P1.soccom] years, else [run] years). Samples
        without a time or position are dropped (printed).
     2. Rename with argoclare's process_soccom_20m_averages() and set
-       pco2_ocean = [P1.bgc] pco2_var (CRUSOE: pCO2_pHbias5_pK01)
+       pco2_ocean = [P1.soccom] pco2_var (CRUSOE: pCO2_pHbias5_pK01)
     3. Add the same features as the core P1 dataset with p1_features.add_all_features(), from
        the sample's own time, position, CT, SA and mld; then delta_pco2 = pco2_ocean - pco2_atmos
     4. Match each sample to a float profid: the nearest profile of the same WMO within
-       [P1.bgc] match_hours (1 h) in the [files] L3_index core + bgc (core first, as in
+       [P1.soccom] match_hours (1 h) in the [files] L3_index core + bgc (core first, as in
        clustering). Unmatched samples are kept with profid '' and match_dt_minutes NaN;
        samples are dropped in P2, when every training sample must have a class.
 prof_datetag (wmoid_YYYYMMDDHH) is kept from the SOCCOM sample time.
-Writes [files] P1_bgc, one netcdf along 'sample' (longitude -180 to 180).
+Writes [files] P1_soccom, one netcdf along 'sample' (longitude -180 to 180), with platform
+'bgcArgo'. This is the CRUSOE training data; create_P1_float_features.py --dataset bgc makes
+the general P1 for BGC float profiles.
 
 Usage:
-    python create_P1_bgc_features.py --config ../../configs/example.toml
-    python create_P1_bgc_features.py --config ../../configs/example.toml --years 2020 --max-samples 300 --out-dir /tmp/test/
+    python create_P1_soccom_features.py --config ../../configs/southernOcean_CRUSOE.toml
+    python create_P1_soccom_features.py --config ../../configs/southernOcean_CRUSOE.toml --years 2020 --max-samples 300 --out-dir /tmp/test/
 """
 import os
 from datetime import datetime, timedelta
@@ -31,8 +33,8 @@ from joblib import Parallel, delayed
 
 import argoclare.oceantools as mod_ocean
 import argoclare.preprocessing as mod_prep
+from argoclare import pipeline
 import p1_features
-import pipeline
 
 
 def datenum_to_datetime(matlab_datenum):
@@ -94,19 +96,19 @@ def process_year(yearDF, yr, files, ref_time, seaice_days_before=None):
 
 def main():
     parser = pipeline.parser(__doc__)
-    parser.add_argument('--years', type=int, nargs='+', default=None, help='Default: [P1.bgc] or [run] years')
+    parser.add_argument('--years', type=int, nargs='+', default=None, help='Default: [P1.soccom] or [run] years')
     parser.add_argument('--n-jobs', type=int, default=None, help='Years to process in parallel (default: [P1] n_jobs)')
     parser.add_argument('--max-samples', type=int, default=None,
                         help='Only use N random samples from each year (for testing)')
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
-    cfg, bgc_cfg = run.section('P1'), run.section('P1.bgc')
+    cfg, bgc_cfg = run.section('P1'), run.section('P1.soccom')
     depth, pco2_var, match_hours = bgc_cfg['depth'], bgc_cfg['pco2_var'], bgc_cfg.get('match_hours', 1)
-    years = run.years('P1.bgc')
+    years = run.years('P1.soccom')
     soccom_dir = run.input('soccom_dir')
     indexes = [run.input('L3_index', 'core'), run.input('L3_index', 'bgc')]
     files = run.feature_files(years)
-    savefile = run.output('P1_bgc')
+    savefile = run.output('P1', 'soccom')
 
     soccom_df = read_soccom_averages(soccom_dir, depth, f'{min(years)}-01-01', f'{max(years) + 1}-01-01', run.in_box)
     soccom_df = soccom_df[soccom_df.datetime.dt.year.isin(years)]
