@@ -1,10 +1,12 @@
 # CRUSOE Southern Ocean dataset (2014-2024): the settings and files currently in use.
 #
-# Every [files] entry points at an existing file (as in argoclare/importer.py), so nothing is
-# moved or renamed. Rerunning a stage with this config stops at the first output that already
-# exists, unless --overwrite is passed. To rebuild part of the chain elsewhere, copy this file,
-# change [run] name, and remove the [files] outputs you want written to the new run folder.
-# Only the config copy and provenance/ are written to run_dir.
+# Every [files] entry for L0-P1 and for the pc8_gmm6_dbar500 clustering ([files.pc8_gmm6_dbar500])
+# points at an existing file, so nothing is moved or renamed. Rerunning a stage with this config
+# stops at the first output that already exists, unless --overwrite is passed. New clusterings
+# (e.g. --n-gmm 7) write to {data_root}/working-vars/P2-clustered/<pcm>/ and regression-inputs/
+# with file names that include <pcm>. Only the config copy and provenance/ go to run_dir.
+#
+# On NERSC, set ARGOCLARE_MACHINE=nersc (or pass --machine nersc) to use [machines.nersc].
 
 [run]
 name = "southernOcean_CRUSOE"
@@ -67,10 +69,10 @@ n_jobs = 8
 n_jobs = 4
 # seaice_days_before = 7           # also add sea_ice_avg_<N>d
 
-[P1.core]
+[P1.core]                          # create_P1_float_features.py --dataset core
 years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
 
-[P1.bgc]
+[P1.soccom]                        # create_P1_soccom_features.py (CRUSOE uses SOCCOM, not P1 bgc floats)
 depth = 5                          # SOCCOM averaging depth in the file names (m)
 pco2_var = "pCO2_pHbias5_pK01"
 match_hours = 1
@@ -79,6 +81,33 @@ match_hours = 1
 dbar_limit = 500
 window_days = 7
 Lx = 2.5
+
+# %% P2: clustering (clustering/fit_argo_clustering.py, clustering/apply_P2_classes.py)
+[P2]
+n_pca = 8
+n_gmm = 6
+dbar_limit = 500
+fit_datasets = ["core", "bgc"]     # L3 datasets fit together; a profid in several is taken from the first
+# exclude_years = [2024]           # left out of the fit, then classified with it
+float_gapfill_days = 12            # unclassified float samples: same float's classes within this
+ship_gapfill_days = 1.5            # unclassified SOCAT samples: same cruise's classes within this
+
+[P2.platform]                      # platform label in P2 (default: the P1 platform column)
+socat = "socatv2025"
+
+# %% Regression inputs (regression/regression-input-prep.py)
+[regression]
+train = ["soccom", "socat"]        # P2 datasets combined for training, in this order
+trainval_years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
+test_years = [2024]
+application = "core"               # P2 dataset the trained model is applied to
+exclude_training = true            # drop application profiles that are float training samples
+features = ["CT", "SA", "log_mld", "adt", "sea_ice", "wind_speed", "atmos_pres_atm", "max_solar_rad"]
+drop_features = []
+target = "delta_pco2"
+ice_threshold = 0.1                # sea_ice above this counts as an ice sample
+min_ice_profiles = 10              # ice samples needed to call a cluster a sea ice cluster
+cv_type = "platform"           # model-optimization folds: "platform" (whole floats/cruises held out), "profile" (whole profiles), "kmeans" (regions)
 
 # %% Files
 [files]
@@ -100,13 +129,50 @@ L0_profiles_core = "/Volumes/crusoe-repo/data/core/202501snap_yr{yr}_core_profil
 L0_index_core = "/Volumes/crusoe-repo/data/core/202501snap_yr{yr}_core_index_20250207.csv"
 L0_profiles_bgc = "/Volumes/crusoe-repo/data/bgc/ERDDAP_yr{yr}_bgc_profiles_20250219.nc"
 L0_index_bgc = "/Volumes/crusoe-repo/data/bgc/ERDDAP_yr{yr}_bgc_index_20250219.csv"
-L1_core = "{data_root}/core/L1-qc/core_QCflags1258_yr{yr}_acc20260730.csv"
-L1_bgc = "{data_root}/bgc/L1-qc/bgc_QCflags1258_wO2_yr{yr}_acc20260731.csv"
-L2 = "{data_root}/{dataset}/L2-mask/{dataset}_open_ocean_INDEX_{yr}.nc"
-L3_data = "{data_root}/{dataset}/L3-interp/{dataset}DATA_byProfid_valid_interp_2014-2024_acc20261015.nc"
-L3_index = "{data_root}/{dataset}/L3-interp/{dataset}INDEX_byProfid_valid_interp_2014-2024_acc20261015.nc"
-socat_L2 = "{data_root}/socat/SOCATv2025_SO_randomresample23p5h_seed0_open_ocean_INDEX_acc20261016.nc"
+L1_core = "{data_root}/core/L1-qc/core_QCflags1258_yr{yr}_acc20260730.csv"           # QC flags 1,2,5,8 on T/S/P/time/position
+L1_bgc = "{data_root}/bgc/L1-qc/bgc_QCflags1258_wO2_yr{yr}_acc20260731.csv"          # also QC on pH; oxygen kept, not QC filtered
+L2 = "{data_root}/{dataset}/L2-mask/{dataset}_open_ocean_INDEX_{yr}.nc"              # GEBCO 2024 elevation < -1000 m
+L3_data = "{data_root}/{dataset}/L3-interp/{dataset}DATA_byProfid_valid_interp_2014-2024_acc20261015.nc"    # 0-1000 dbar every 5, 1050-1950 every 50
+L3_index = "{data_root}/{dataset}/L3-interp/{dataset}INDEX_byProfid_valid_interp_2014-2024_acc20261015.nc"  # surfacemost obs, mlp/mld, prof_datetag; descending casts dropped
+socat_L2 = "{data_root}/socat/SOCATv2025_SO_randomresample23p5h_seed0_open_ocean_INDEX_acc20261016.nc"     # random 23.5 h resample (seed 0), 72 h gaps; dim sample
 mbl = "/Volumes/crusoe-repo/data/marineboundarylayer/co2_mbl_2014-2024_dataset_combined.nc"
-P1_core = "{data_root}/working-vars/P1-processed/P1_coreArgo_application_features_yr2014-2023_acc20261016.nc"
-P1_bgc = "{data_root}/working-vars/P1-processed/P1_bgcArgo_soccom5m_features_yr2014-2024_acc20261016.nc"
-P1_socat = "{data_root}/working-vars/P1-processed/P1_socatv2025_features_yr2014-2024_acc20261016.nc"
+P1_core = "{data_root}/working-vars/P1-processed/P1_coreArgo_application_features_yr2014-2023_acc20261016.nc"  # one row per L3 core profile (dim profid); SLP and MBL 2024 fixes
+P1_soccom = "{data_root}/working-vars/P1-processed/P1_bgcArgo_soccom5m_features_yr2014-2024_acc20261016.nc"    # SOCCOM 5 m averages, pco2_ocean = pCO2_pHbias5_pK01; profid within 1 h ("" if none)
+P1_socat = "{data_root}/working-vars/P1-processed/P1_socatv2025_features_yr2014-2024_acc20261016.nc"           # nearest clusterable profile (CT/SA above 500 dbar) within 7 d ("" if none)
+
+# Clustering and regression files for any {pcm}, next to the ones in use
+P2_finder = "{data_root}/working-vars/P2-clustered/{pcm}/PCM_finder_{pcm}.parquet"
+P2_fit = "{data_root}/working-vars/P2-clustered/{pcm}/PCM_fit_{pcm}.json"
+P2_model = "{data_root}/working-vars/P2-clustered/{pcm}/PCM_model_{pcm}.joblib"
+P2 = "{data_root}/working-vars/P2-clustered/{pcm}/P2_{dataset}_{pcm}.parquet"                 # all years, one file per P1 dataset
+P2_trainval = "{data_root}/working-vars/P2-clustered/{pcm}/P2_combined_trainval_socat_soccom_{pcm}.parquet"
+P2_test = "{data_root}/working-vars/P2-clustered/{pcm}/P2_combined_test_socat_soccom_{pcm}.parquet"
+P2_application = "{data_root}/working-vars/P2-clustered/{pcm}/P2_coreArgo_application_{pcm}.parquet"
+reg_trainval = "{data_root}/working-vars/regression-inputs/combined_trainval_{pcm}.csv"
+reg_application = "{data_root}/working-vars/regression-inputs/coreArgo_application_{pcm}.csv"
+reg_info = "{data_root}/working-vars/regression-inputs/regression_info_{pcm}.json"         # sea ice clusters and features, read by model-optimization
+model_results = "{data_root}/argoclare-runs"
+
+[files.pc8_gmm6_dbar500]           # the clustering in use (Oct 15 L3 core + bgc; classes north (1) to south)
+P2_finder = "{data_root}/working-vars/P2-clustered/pc8_gmm6_dbar500/PCM_finder_pc8_gmm6_dbar500_acc20261016.parquet"
+P2_fit = "{data_root}/working-vars/P2-clustered/pc8_gmm6_dbar500/PCM_fit_pc8_gmm6_dbar500_acc20261016.json"
+P2_trainval = "{data_root}/working-vars/P2-clustered/pc8_gmm6_dbar500/P2_combined_trainval_socat_soccom_2014-2023_acc20261016.parquet"  # SOCCOM 5 m + socatv2025, 2014-2023; unclassified dropped
+P2_test = "{data_root}/working-vars/P2-clustered/pc8_gmm6_dbar500/P2_combined_test_socat_soccom_2024_acc20261016.parquet"              # 2024
+P2_application = "{data_root}/working-vars/P2-clustered/pc8_gmm6_dbar500/P2_coreArgo_application_2014-2023_acc20261016.parquet"       # core 2014-2023; SOCCOM training/test profiles excluded
+reg_trainval = "{data_root}/working-vars/regression-inputs/combined_trainval_pc8_gmm6_dbar500_seaiceclusters56_acc20261016.csv"
+reg_application = "{data_root}/working-vars/regression-inputs/coreArgo_application_pc8_gmm6_dbar500_acc20261016.csv"
+
+# %% NERSC (ARGOCLARE_MACHINE=nersc): regression inputs copied to the repo checkout, results on pscratch
+[machines.nersc.run]
+data_root = "/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization/x_localdata"
+run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/southernOcean_CRUSOE"
+
+[machines.nersc.files]
+reg_trainval = "{data_root}/combined_trainval_{pcm}.csv"
+reg_application = "{data_root}/coreArgo_application_{pcm}.csv"
+reg_info = "{data_root}/regression_info_{pcm}.json"
+model_results = "/pscratch/sd/s/sangsong/argoclare_runs/results"
+
+[machines.nersc.files.pc8_gmm6_dbar500]
+reg_trainval = "{data_root}/combined_trainval_pc8_gmm6_dbar500_seaiceclusters56_acc20261016.csv"
+reg_application = "{data_root}/coreArgo_application_pc8_gmm6_dbar500_acc20261016.csv"

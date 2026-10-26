@@ -1,0 +1,117 @@
+# Atlantic example run: five years (2018-2022) of core and BGC Argo in the Atlantic sector of the
+# Southern Ocean (70W-20E, south of 35S), from ERDDAP, clustered into 2 classes. See
+# example-workflow-atlantic.md. Compared with example.toml (Drake Passage, 2020), it has enough
+# BGC floats to train and cross-validate the per-cluster oxygen models.
+#
+# Copy this file, give it a new [run] name, and point the external inputs in [files] at your
+# own copies. Outputs go to <data_root>/<name>/ with fixed names (see DEFAULT_FILES in
+# src/argoclare/pipeline.py); relative paths are relative to this file. See
+# scripts/data-processing/README.md and scripts/clustering/README.md for the commands.
+#
+# The chain: L0 -> L1 -> L2 -> L3 (core and bgc) -> P1 float features (core and bgc) ->
+# P2 fit on core + bgc together -> P2 classes for core and bgc -> regression inputs.
+# The regression example predicts surface oxygen from the BGC floats and applies the trained
+# model to the core floats (southernOcean_CRUSOE.toml trains on SOCCOM pCO2 and SOCAT instead).
+
+[run]
+name = "example_atlantic2018-2022"
+data_root = "../x_data"            # run folder: <data_root>/<name>/
+years = [2018, 2019, 2020, 2021, 2022]
+ref_time = "2014-01-01"            # origin of linear_time / yearday (days)
+
+[region]
+box = [-70, 20, -90, -35]          # lon_min, lon_max, lat_min, lat_max: Atlantic sector
+pres = [0, 2000]                   # dbar
+
+# %% L0: Argopy download (create_L0_raw_argo.py)
+[L0.fetcher]                       # argopy DataFetcher options
+mode = "expert"                    # all data and QC flags; QC is applied in L1
+params = "all"
+parallel = true
+progress = true                    # set false in batch jobs (argopy needs a terminal for it)
+chunks_maxsize = { time = 30 }
+
+[L0.core]
+source = "erddap"                  # or "gdac", with [files] gdac = <local GDAC copy>
+description = "Ifremer ERDDAP"
+
+[L0.bgc]
+source = "erddap"
+description = "Ifremer ERDDAP"
+
+# %% L1: QC (create_L1_QC_argo.py)
+[L1]
+use_flags = ["1", "2", "5", "8"]
+core_qc_vars = ["temperature_qc", "salinity_qc", "pressure_qc", "time_qc", "position_qc"]
+bgc_qc_vars = ["pH_qc"]            # added to core_qc_vars for bgc; oxygen_qc is kept, not filtered
+bgc_vars = ["pH", "oxygen"]
+n_jobs = 1
+
+# %% L2: open ocean mask (create_L2_masked_argo.py)
+[L2]
+bathy_lim = -1000                  # keep profiles where GEBCO elevation < bathy_lim (m)
+
+# %% L3: regridding (create_L3_gridded_*.py)
+[L3]
+surface_max = 25
+bgc_vars = ["pH"]
+n_jobs = 4
+
+# %% P1: regression features (create_P1_float_features.py --dataset core|bgc)
+[P1]
+n_jobs = 1
+
+# %% P2: clustering (clustering/fit_argo_clustering.py, clustering/apply_P2_classes.py)
+[P2]
+n_pca = 4
+n_gmm = 2
+dbar_limit = 500
+fit_datasets = ["core", "bgc"]     # L3 datasets fit together; a profid in several is taken from the first
+float_gapfill_days = 12            # unclassified float samples: same float's classes within this
+
+# %% Regression inputs (regression/regression-input-prep.py)
+[regression]
+train = ["bgc"]                    # P2 datasets combined for training
+trainval_years = [2018, 2019, 2020, 2021]
+test_years = [2022]
+application = "core"               # P2 dataset the trained model is applied to
+exclude_training = true            # drop application profiles that are also training samples
+features = ["CT", "SA", "adt", "max_solar_rad", "atmos_pres_atm"]
+drop_features = []
+target = "oxygen"                  # surfacemost oxygen (umol/kg); L1 keeps oxygen without QC filtering,
+target_qc_flags = [1, 2, 5, 8]     # so keep only these oxygen_qc flags for training
+ice_threshold = 0.1
+min_ice_profiles = 10
+cv_type = "profile"                # model-optimization folds: "platform" (whole floats/cruises held out), "profile" (whole profiles), "kmeans" (regions)
+
+# %% Files
+# Pipeline outputs use the run folder layout, so only external inputs are listed here.
+# Each one has to be downloaded separately; {yr} is filled in for files with one year each.
+[files]
+bathy = "{data_root}/external/GEBCO_2024_sub_ice_topo.nc"                 # https://www.gebco.net
+mbl_txt = ["{data_root}/external/MBL_surfaceco2_GHGreference.txt"]        # https://gml.noaa.gov/ccgg/GHGreference/
+era5_slp = "{data_root}/external/era5/era5_mean_slp_yr{yr}.nc"            # ERA5 msl, hourly
+era5_wind = "{data_root}/external/era5/era5_wind_speed_{yr}.nc"           # ERA5 u10, v10, hourly
+adt = "{data_root}/external/cmems_adt_{yr}.nc"                            # CMEMS DUACS L4 adt, daily
+seaice = "{data_root}/external/sic_pss25_{yr}0101-{yr}1231_v06r00.nc"     # NSIDC CDR v6, daily
+# Optional ship data (create_L2_resampled_masked_socat.py, create_P1_socat_features.py):
+# socat_raw = "{data_root}/external/socatv2025_SouthernOceans_DATA.csv"   # https://socat.info
+
+# %% Machine profiles: settings that change on another computer
+# A [machines.<name>] table replaces the settings above on that machine only. Choose it with
+# ARGOCLARE_MACHINE=<name> (or --machine <name>); without it, everything above is used as is.
+# Paths can use environment variables. See "Running on an HPC system" in example-workflow.md.
+#
+# NERSC (Perlmutter). The model-optimization sbatch scripts set ARGOCLARE_MACHINE=nersc.
+# $PSCRATCH is fast but purged periodically (see the NERSC docs); to keep data, use your project's
+# CFS folder instead, e.g. data_root = "/global/cfs/cdirs/<project>/<user>/argoclare-data".
+[machines.nersc.run]
+data_root = "$PSCRATCH/argoclare-data"   # external inputs (external/) and the run folder <data_root>/example_atlantic2018-2022/
+
+# UW Hyak (klone): uncomment, then replace <group> (your lab's Hyak account) and <netid>.
+# /gscratch/<group> is your lab's storage; /gscratch/scrubbed is shared scratch that is cleaned
+# automatically (see the Hyak docs), so only send results you can regenerate there.
+# [machines.hyak.run]
+# data_root = "/gscratch/<group>/<netid>/argoclare-data"
+# [machines.hyak.files]
+# model_results = "/gscratch/scrubbed/<netid>/argoclare_runs/example_atlantic2018-2022/{pcm}"

@@ -1,0 +1,109 @@
+# CRUSOE synthetic (E3SM) run: synthetic floats following the real core and SOCCOM WMOs, and
+# synthetic SOCAT at the real SOCAT samples (scripts/synthetic-processing/README.md).
+#
+# Its L3, P1 and P2 files take the place of the real ones, so the shared scripts
+# (clustering/fit_argo_clustering.py, regression/regression-input-prep.py, model-optimization)
+# run on it unchanged with --config configs/synthetic_CRUSOE.toml. Every [files] entry for the
+# pc8_gmm6_dbar500 clustering points at an existing file; rerunning a stage stops at the first
+# output that already exists, unless --overwrite is passed.
+
+[run]
+name = "synthetic_CRUSOE"
+data_root = "/Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata"
+run_dir = "{data_root}/runs/synthetic_CRUSOE"
+years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
+ref_time = "2014-01-01"
+
+[region]
+box = [-180, 180, -90, -35]
+pres = [0, 2000]
+
+# %% Synthetic L3 and P1 (synthetic-processing/)
+[synthetic]
+n_jobs = 8                         # create_L3_synthetic_argo.py regridding workers
+chunk_floats = 25                  # floats per regridding task
+subsample_seed = 0                 # apply_P2_synthetic_clustering.py: yearly subsample to the real SOCCOM counts
+
+[P1]
+n_jobs = 4
+
+[P1.socat]                         # create_P1_synthetic_socat.py colocation
+dbar_limit = 500
+window_days = 7
+Lx = 2.5
+
+# %% P2: clustering, refit on the synthetic profiles with the real parameters
+[P2]
+n_pca = 8
+n_gmm = 6
+dbar_limit = 500
+fit_datasets = ["core", "bgc"]
+float_gapfill_days = 12
+ship_gapfill_days = 1.5
+
+# %% Regression inputs
+[regression]
+train = ["syn_trainval"]           # the synthetic trainval file (synBgcArgo + synSOCAT, already subsampled)
+trainval_years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
+test_years = []
+application = "core"
+exclude_training = false
+features = ["CT", "SA", "log_mld", "adt", "sea_ice", "wind_speed", "atmos_pres_atm", "max_solar_rad"]
+drop_features = ["adt"]            # no sea surface height in the model output
+target = "delta_pco2"
+ice_threshold = 0.1
+min_ice_profiles = 10
+cv_type = "platform"           # model-optimization folds: "platform" (whole floats/cruises held out), "profile" (whole profiles), "kmeans" (regions)
+
+# %% Files
+[files]
+# External inputs
+syn_merged = "{data_root}/LIGHT-bgcArgo/synArgo_realworld_matches_merged.nc"        # merged synthetic float netcdf
+syn_socat = "{data_root}/working-vars/synthetic/synSOCAT-daily_matches_acc20261016.nc"   # PKG-synthetic-extract/extract_SOCAT.py
+real_P1_soccom = "{data_root}/working-vars/P1-processed/P1_bgcArgo_soccom5m_features_yr2014-2024_acc20261016.nc"  # SOCCOM wmoids
+real_P1_core = "{data_root}/working-vars/P1-processed/P1_coreArgo_application_features_yr2014-2023_acc20261016.nc" # core wmoids
+real_P2_trainval = "{data_root}/working-vars/P2-clustered/pc8_gmm6_dbar500/P2_combined_trainval_socat_soccom_2014-2023_acc20261016.parquet"  # real SOCCOM counts by year
+
+# Synthetic files in use
+L3_data = "{data_root}/working-vars/synthetic/L3-interp/synthetic_{dataset}DATA_byProfid_2014-2023_acc20261016.nc"    # CT, SA on the real L3 pressure levels
+L3_index = "{data_root}/working-vars/synthetic/L3-interp/synthetic_{dataset}INDEX_byProfid_2014-2023_acc20261016.nc"  # CT/SA at 5 dbar, model surface variables
+P1_bgc = "{data_root}/working-vars/synthetic/P1-processed/P1_synArgo_bgc_features_yr2014-2023_acc20261016.nc"              # model features + time vars + max_solar_rad (no ADT)
+P1_core = "{data_root}/working-vars/synthetic/P1-processed/P1_synArgo_core_application_features_yr2014-2023_acc20261016.nc"
+P1_socat = "{data_root}/working-vars/synthetic/P1-processed/P1_synSOCAT_features_yr2014-2023_acc20261017.nc"              # colocated to the nearest clusterable synthetic profile (7 d)
+
+# Clustering and regression files for any {pcm}
+P2_finder = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/PCM_finder_{pcm}.parquet"
+P2_fit = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/PCM_fit_{pcm}.json"
+P2_model = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/PCM_model_{pcm}.joblib"
+P2_syn_trainval = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synthetic_combined_trainval_socat_bgc_{pcm}.parquet"
+P2_core = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synArgo_core_application_{pcm}.parquet"
+P2_trainval = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synthetic_regression_trainval_{pcm}.parquet"
+P2_test = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synthetic_regression_test_{pcm}.parquet"
+P2_application = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synthetic_regression_application_{pcm}.parquet"
+reg_trainval = "{data_root}/working-vars/regression-inputs/combined_trainval_synthetic_{pcm}.csv"
+reg_application = "{data_root}/working-vars/regression-inputs/coreArgo_application_synthetic_{pcm}.csv"
+reg_info = "{data_root}/working-vars/regression-inputs/regression_info_synthetic_{pcm}.json"
+model_results = "{data_root}/argoclare-runs"
+
+[files.pc8_gmm6_dbar500]           # GMM refit on synthetic profiles; classes north to south (not the real class numbers)
+P2_finder = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/PCM_finder_pc8_gmm6_dbar500_acc20261016.parquet"
+P2_fit = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/PCM_fit_pc8_gmm6_dbar500_acc20261016.json"
+P2_syn_trainval = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synthetic_combined_trainval_socat_bgc_2014-2023_acc20261017.parquet"  # synBgcArgo + synSOCAT; unclassified dropped
+P2_core = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synArgo_core_application_2014-2023_acc20261016.parquet"                     # synCoreArgo application set
+reg_trainval = "{data_root}/working-vars/regression-inputs/combined_trainval_synthetic_pc8_gmm6_dbar500_seaiceclusters6_acc20261017.csv"
+reg_application = "{data_root}/working-vars/regression-inputs/coreArgo_application_synthetic_pc8_gmm6_dbar500_acc20261017.csv"
+
+# %% NERSC (ARGOCLARE_MACHINE=nersc): regression inputs copied to the repo checkout, results on pscratch
+[machines.nersc.run]
+data_root = "/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization/x_localdata"
+run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/synthetic_CRUSOE"
+
+[machines.nersc.files]
+reg_trainval = "{data_root}/combined_trainval_synthetic_{pcm}.csv"
+reg_application = "{data_root}/coreArgo_application_synthetic_{pcm}.csv"
+reg_info = "{data_root}/regression_info_synthetic_{pcm}.json"
+model_results = "/pscratch/sd/s/sangsong/argoclare_runs/results"
+
+[machines.nersc.files.pc8_gmm6_dbar500]
+reg_trainval = "{data_root}/combined_trainval_synthetic_pc8_gmm6_dbar500_seaiceclusters6_acc20261017.csv"
+reg_application = "{data_root}/coreArgo_application_synthetic_pc8_gmm6_dbar500_acc20261017.csv"
