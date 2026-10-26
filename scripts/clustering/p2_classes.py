@@ -1,8 +1,8 @@
 """Shared P2 steps: give P1 samples the GMM classes of their Argo profile, gap-fill, and save.
 
-Used by apply_P2_clustering.py (SOCCOM + SOCAT training/validation and test) and
-apply_P2_core_clustering.py (core Argo application). Classes come from a PCM_finder (parquet) made
-by fit_argo_clustering.py (one row per classified profid, class1_prob..classN_prob, class_assign).
+Used by apply_P2_classes.py (any P1 dataset) and the synthetic apply scripts in
+synthetic-processing/. Classes come from a PCM_finder (parquet) made by fit_argo_clustering.py
+(one row per classified profid, class1_prob..classN_prob, class_assign).
 Columns added to each sample:
     class1_prob..classN_prob, class_assign
     class_profid   the profile the class came from
@@ -94,25 +94,6 @@ def classify_float_samples(df, profid_col, finder, prob_cols, max_days):
     df, n_filled = fill_from_neighbours(df, 'platform_id', float_cands, 'platform_id', max_days, prob_cols)
     return df, (n_matched, n_filled)
 
-
-def training_profids(p2_files, float_platforms=('bgcArgo', 'synBgcArgo')):
-    """Float profiles that are training/validation (or test) samples: the own matched 'profid'
-    of float samples in the given P2 trainval/test parquet files. SOCAT nearest_profid and
-    gap-fill class sources are not training samples and are not returned."""
-    ids = set()
-    for f in p2_files:
-        p2 = pd.read_parquet(f, columns=['platform', 'profid'])
-        ids |= set(p2.loc[p2['platform'].isin(float_platforms), 'profid']) - {''}
-    return ids
-
-
-def exclude_training_profiles(df, p2_files):
-    """Drop application profiles that are float training samples in p2_files; returns (df, n_excluded)."""
-    train = training_profids(p2_files)
-    drop = df['profid'].isin(train)
-    print(f'Excluding {int(drop.sum())} profiles that are float training samples in: '
-          + ', '.join(os.path.basename(f) for f in p2_files))
-    return df[~drop].copy(), int(drop.sum())
 
 
 def drop_unclassified(df, label, n_matched, n_filled, how):
