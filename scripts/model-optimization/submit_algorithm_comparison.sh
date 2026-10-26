@@ -4,14 +4,17 @@
 # choosing the best algorithm by cluster with compare_algorithms.py.
 # Run from a login node; each algorithm gets its own 1-node job via submit_nested_cv.sbatch.
 #
-# Usage (from /global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization):
+# Usage (from scripts/model-optimization in the repo, e.g. on NERSC
+#   /global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression/scripts/model-optimization):
 #   ./submit_algorithm_comparison.sh TAG [run_dask_nested_cv.py options]
 #   ./submit_algorithm_comparison.sh cmp20261015
 #   SEED=7 ./submit_algorithm_comparison.sh cmp20261015_seed7
 #
 # Run names are crusoe_<ALGORITHM>_<GRID>_<TAG>. Once all jobs finish, on the login node:
-#   module load python; conda activate dask-cv
+#   module load python; conda activate dask-cv      (or your cluster's environment)
 #   python compare_algorithms.py --tag TAG
+# On another cluster, set the Slurm account etc. with SBATCH_ACCOUNT, SBATCH_PARTITION, ... and the
+# environment with ARGOCLARE_ENV_SETUP (see submit_nested_cv.sbatch); this script passes them on.
 
 set -eo pipefail
 
@@ -29,13 +32,15 @@ GRIDS=(     rfr_full ert_full xgb_full)
 TIMES=(     01:00:00 01:00:00 02:00:00)
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# The jobs run from (and log to) this folder, wherever this script is started from
+export ARGOCLARE_SRC_DIR=$SCRIPT_DIR
 
 JOB_IDS=()
 for i in "${!ALGORITHMS[@]}"; do
     ALGORITHM=${ALGORITHMS[$i]}
     GRID=${GRIDS[$i]}
     RUN_NAME=crusoe_${ALGORITHM}_${GRID}_${TAG}
-    JOB_ID=$(sbatch --parsable -J "${ALGORITHM}_${TAG}" -t "${TIMES[$i]}" \
+    JOB_ID=$(sbatch --parsable -D "$SCRIPT_DIR" -J "${ALGORITHM}_${TAG}" -t "${TIMES[$i]}" \
                     "$SCRIPT_DIR/submit_nested_cv.sbatch" "$ALGORITHM" "$GRID" \
                     --run-name "$RUN_NAME" --seed "$SEED" "$@")
     echo "Submitted $ALGORITHM ($GRID) as job $JOB_ID, run name $RUN_NAME"
@@ -47,5 +52,5 @@ echo
 echo "Check progress:"
 echo "  sacct -j $ALL_IDS --format=JobID,JobName,State,Elapsed"
 echo "When all three show COMPLETED, compare on the login node:"
-echo "  module load python; conda activate dask-cv"
+echo "  ${ARGOCLARE_ENV_SETUP-module load python && conda activate dask-cv}"
 echo "  python compare_algorithms.py --tag $TAG"

@@ -22,6 +22,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from argoclare import pipeline
+
 # ==== Standard run parameters =======
 n_clusters = 6 # SO classes
 var_predict = 'delta_pco2'
@@ -36,11 +38,15 @@ def parse_args():
     parser.add_argument('--tag', required=True,
                         help='Comparison tag given to submit_algorithm_comparison.sh')
     parser.add_argument('--algorithms', nargs='+', default=['RFR', 'ERT', 'XGB'])
-    parser.add_argument('--savepath', default=default_savepath,
-                        help='Folder with the outercvErrors files')
+    parser.add_argument('--savepath', default=None,
+                        help='Folder with the outercvErrors files (default: [files] model_results with --config)')
     parser.add_argument('--outpath', default=None,
                         help='Folder to save comparison outputs (default: --savepath)')
-    return parser.parse_args()
+    pipeline.add_model_args(parser)
+    args = parser.parse_args()
+    pipeline.fill_model_args(args)
+    args.savepath = args.savepath or default_savepath
+    return args
 
 
 def find_run_file(savepath, algorithm, tag):

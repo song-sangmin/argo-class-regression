@@ -13,16 +13,33 @@ sbatch -J XGBcv10x5 -t 02:00:00 submit_nested_cv.sbatch XGB xgb_full
 
 Or debug with shorter version `sbatch -J RFR_test -q debug -t 00:10:00 submit_nested_cv.sbatch RFR rfr_test --n-outer 2 --n-inner 2`
 
--J names the job and its log file
+-J names the job and its log file (`logs/<job name>_<job id>.out`, in this folder)
 Options before submit_nested_cv.sbatch go to Slurm (-t, -q)
 Anything after the grid name goes to the Python script (--run-name, --n-outer, --n-workers and so on). 
 
+Submit from this folder: the job runs from the folder `sbatch` is called from (or `ARGOCLARE_SRC_DIR`). To keep the logs on pscratch as before, add `-o /pscratch/sd/s/sangsong/argoclare_runs/logs/%x_%j.out`.
 
+**Other clusters (e.g. UW Hyak)** need no edits to the job scripts: pass `-A <account> -p <partition> -q <qos> -C <feature>` to `sbatch` (or set `SBATCH_ACCOUNT`, `SBATCH_PARTITION`, ...), set `ARGOCLARE_ENV_SETUP` to the commands that activate the environment (default `module load python && conda activate dask-cv`; `""` to use the environment you submit from), and `ARGOCLARE_MACHINE` to the config's machine profile. See "Running on an HPC system" in `example-workflow.md`.
+
+
+
+## Using a run config (optional)
+
+With `--config`, the scripts take `--data`, `--application-data`, `--savepath`, `--sea-ice-clusters` and `--drop-features` from the run config. The paths come from the `[machines.nersc]` profile, and the sbatch scripts set `ARGOCLARE_MACHINE=nersc` for you. Sea ice clusters and dropped features come from the `regression_info_<pcm>.json` that `regression-input-prep.py` writes, so copy it to `x_localdata/` along with the csvs. Options you pass yourself still take precedence. Without `--config`, the defaults at the top of each script apply, as before.
+
+```
+C=../../configs/southernOcean_CRUSOE.toml
+sbatch -J RFRcv10x5 submit_nested_cv.sbatch RFR rfr_full --config $C
+sbatch -J RFR_gmm7 submit_nested_cv.sbatch RFR rfr_full --config $C --n-gmm 7     # another clustering (clustering/README.md)
+sbatch -J app_RFR_core submit_model_application.sbatch --config $C
+```
+
+The number of clusters is read from the `cluster{k}_prob` columns of the data, so a 7-class fit needs no code changes.
 
 ## Check on jobs:
 
 squeue --me                                                # status
-tail -f /pscratch/sd/s/sangsong/argoclare_runs/logs/RFR_full_<JOBID>.out   # live progress
+tail -f logs/RFR_full_<JOBID>.out                         # live progress (logs/ next to the job scripts)
 scancel <JOBID>                                            # cancel
 sacct -j <JOBID> --format=JobID,State,Elapsed              # after it finishes
 
@@ -65,6 +82,15 @@ sbatch -J app_cmp20261015 submit_model_application.sbatch \
 ## Synthetic data: train and apply with the real-world algorithms
 
 No algorithm comparison here. Reuse the `bestAlgorithms.json` from the real-world comparison and point the application job at the synthetic files. `regression-input-prep.py` prints the sea ice clusters and features to use for each dataset (synthetic: cluster 6 only, no `adt`).
+
+With the synthetic run config, the synthetic files, sea ice cluster 6 and `--drop-features adt` are all set:
+```
+sbatch -J app_synthetic submit_model_application.sbatch --config ../../configs/synthetic_CRUSOE.toml \
+    --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json \
+    --run-name crusoe_synthetic_application_cmp20261017
+```
+
+Without a config:
 
 Cluster-dependent algorithm (using --cluster-models)
 ```

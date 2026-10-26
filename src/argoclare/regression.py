@@ -309,12 +309,12 @@ def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'del
 
     return calibrated_valDF
 
-def get_clustered_calibration_coeffs(valDF):
+def get_clustered_calibration_coeffs(valDF, target_var='delta_pco2'):
     cal_coeffs = {ncluster:None for ncluster in valDF['cluster'].unique()}
     for ncluster, class_valDF in valDF.groupby('cluster'):
         class_valDF['n_decile'] = pd.qcut(class_valDF['weighted_pred'], 10, labels=list(range(1, 11))) #
         cal_pred = class_valDF.groupby('n_decile', observed=True)['weighted_pred'].agg(['mean', 'min', 'max', 'count'])
-        cal_obs = class_valDF.groupby('n_decile', observed=True)['delta_pco2'].agg(['mean', 'min', 'max', 'count'])
+        cal_obs = class_valDF.groupby('n_decile', observed=True)[target_var].agg(['mean', 'min', 'max', 'count'])
 
         stat_var = 'mean'
         lincal = stats.linregress(cal_pred[stat_var].values, cal_obs[stat_var].values)

@@ -37,7 +37,8 @@ def run_dask_nested_cv(client, trainval_data, n_clusters, sea_ice_clusters,
     :param n_inner: # of inner folds to iterate over
     :param training_algorithm: (str) choose 'RFR', 'ERT', 'XGB'
     :param tuning_grid: dictionary of hyperparameter choices to test
-    :param cv_type: choose "platform" or "kmeans" 
+    :param cv_type: "platform" (folds of whole floats/cruises, platform_id), "profile" (whole profiles,
+                    profid column; crossvalidation platform splits by profid) or "kmeans"
     :param seed: int seed for platform fold splits (default None, not reproducible)
     
     
@@ -58,8 +59,8 @@ def run_dask_nested_cv(client, trainval_data, n_clusters, sea_ice_clusters,
                                 trainval_data[trainval_data.cluster==classnum],
                                 n_outer = n_outer,
                                 n_inner = n_inner,
-                                spatial_cv = cv_type,
-                                indexer = 'platform_id',
+                                spatial_cv = 'platform' if cv_type == 'profile' else cv_type,
+                                indexer = 'profid' if cv_type == 'profile' else 'platform_id',
                                 random_state = seed))
         soclass_cvtainers['cluster' + str(classnum)] = outer_nest
     cvtainers_future = client.scatter(soclass_cvtainers,broadcast=True)
@@ -185,9 +186,10 @@ def run_dask_nested_cv(client, trainval_data, n_clusters, sea_ice_clusters,
         fold_CMV = evaluate_outer_fold(fold_CMV, fold_valDF, feat_list, var_predict, sea_ice_clusters)
 
         # Run linear calibration
-        cal_coeffs = regression.get_clustered_calibration_coeffs(fold_CMV.weighted_validation)
+        cal_coeffs = regression.get_clustered_calibration_coeffs(fold_CMV.weighted_validation, target_var=var_predict)
         fold_CMV.cal_coeffs = cal_coeffs
-        fold_CMV.weighted_validation = regression.apply_clustered_calibration(cal_coeffs, fold_CMV.weighted_validation, n_clusters)
+        fold_CMV.weighted_validation = regression.apply_clustered_calibration(cal_coeffs, fold_CMV.weighted_validation, n_clusters,
+                                                                              target_var=var_predict)
     
         ClusteredModel_OuterFoldResults[outer_foldtag] = fold_CMV # equivalent of ClusteredModel_OuterFoldResults = dict(client.gather(futures))
     

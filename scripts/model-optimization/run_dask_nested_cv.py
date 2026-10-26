@@ -15,12 +15,13 @@ from datetime import datetime
 import pandas as pd
 from dask.distributed import LocalCluster, Client
 
+from argoclare import pipeline
+
 import procedures_cv
 from tuning_grids import TUNING_GRIDS
 
 # ==== Standard run parameters =======
-n_clusters = 6 # SO classes
-sea_ice_clusters = [5, 6] # default, change with --sea-ice-clusters
+sea_ice_clusters = [5, 6] # default, change with --sea-ice-clusters (or from reg_info with --config)
 
 feat_list = ['CT', 'SA', 'log_mld', 'adt', 'sea_ice',
              'wind_speed', 'atmos_pres_atm', 'max_solar_rad'] # 8 features, leave some out with --drop-features
@@ -42,7 +43,9 @@ def parse_args():
                         help='Output file prefix (default: crusoe_<ALGORITHM>_platformCV_<grid>)')
     parser.add_argument('--n-outer', type=int, default=10, help='Outer folds (error estimation)')
     parser.add_argument('--n-inner', type=int, default=5, help='Inner folds (tuning)')
-    parser.add_argument('--cv-type', default='platform', choices=['platform', 'kmeans'])
+    parser.add_argument('--cv-type', default=None, choices=['platform', 'profile', 'kmeans'],
+                        help='Fold splits: whole floats/cruises (platform), whole profiles (profile), or '
+                             'k-means regions (kmeans). Default: [regression] cv_type with --config, else platform')
     parser.add_argument('--scoring', default='median_abs_error', help='Inner fold scoring error')
     parser.add_argument('--seed', type=int, default=None,
                         help='Seed for platform fold splits; use the same seed to compare algorithms on identical folds')
@@ -50,13 +53,21 @@ def parse_args():
                         help='Dask LocalCluster workers (default: chosen by dask from available CPUs)')
     parser.add_argument('--threads-per-worker', type=int, default=None,
                         help='Threads per dask worker (default: chosen by dask from available CPUs)')
-    parser.add_argument('--data', default=default_data)
-    parser.add_argument('--sea-ice-clusters', type=int, nargs='+', default=sea_ice_clusters,
+    parser.add_argument('--data', default=None, help='Combined trainval csv (default: [files] reg_trainval with --config)')
+    parser.add_argument('--sea-ice-clusters', type=int, nargs='+', default=None,
                         help='Clusters trained with sea_ice as a feature (from regression-input-prep.py)')
-    parser.add_argument('--drop-features', nargs='+', default=[], choices=feat_list,
+    parser.add_argument('--drop-features', nargs='+', default=[],
                         help='Features in feat_list to leave out (e.g. adt for synthetic data)')
-    parser.add_argument('--savepath', default=default_savepath)
-    return parser.parse_args()
+    parser.add_argument('--savepath', default=None, help='Results folder (default: [files] model_results with --config)')
+    pipeline.add_model_args(parser)
+    args = parser.parse_args()
+    pipeline.fill_model_args(args)
+    args.data = args.data or default_data
+    args.savepath = args.savepath or default_savepath
+    if args.sea_ice_clusters is None:
+        args.sea_ice_clusters = sea_ice_clusters
+    args.cv_type = args.cv_type or 'platform'
+    return args
 
 
 def main():
@@ -65,20 +76,25 @@ def main():
     run_name = args.run_name or f'crusoe_{args.algorithm}_platformCV_{args.grid}'
     savepath = os.path.join(args.savepath, '') # outfile is appended directly to savepath
     os.makedirs(savepath, exist_ok=True)
-    run_feat_list = [x for x in feat_list if x not in args.drop_features]
+    run_feat_list = [x for x in (getattr(args, 'features', None) or feat_list) if x not in args.drop_features]
+    target = getattr(args, 'target', None) or var_predict
 
     trainval_data = pd.read_csv(args.data, index_col=0) # for platformID
-    print(f'Loaded {len(trainval_data)} samples from {args.data}')
+    if args.cv_type == 'profile' and 'profid' not in trainval_data.columns:
+        raise SystemExit(f'--cv-type profile needs a profid column in {args.data}: rerun '
+                         'regression-input-prep.py with [regression] cv_type = "profile"')
+    n_clusters = int(trainval_data.columns.str.fullmatch(r'cluster\d+_prob').sum()) # GMM classes
+    print(f'Loaded {len(trainval_data)} samples from {args.data} ({n_clusters} clusters)')
     print(f'Algorithm: {args.algorithm}, grid: {args.grid} = {tuning_grid}')
     print(f'Folds: {args.n_outer} outer x {args.n_inner} inner, seed: {args.seed}, run name: {run_name}')
-    print(f'Features: {run_feat_list}, sea ice clusters: {args.sea_ice_clusters}')
+    print(f'Features: {run_feat_list}, target: {target}, sea ice clusters: {args.sea_ice_clusters}')
 
     with LocalCluster(dashboard_address=None) as cluster, Client(cluster) as client:
         print(client)
         print('Starting dask training: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
         procedures_cv.run_dask_nested_cv(client, trainval_data,
                                             n_clusters, args.sea_ice_clusters,
-                                            run_feat_list, var_predict,
+                                            run_feat_list, target,
                                             args.n_outer, args.n_inner,
                                             args.algorithm, tuning_grid,
                                             args.cv_type,

@@ -23,12 +23,13 @@ from datetime import datetime
 import pandas as pd
 from dask.distributed import LocalCluster, Client
 
+from argoclare import pipeline
+
 import procedures_application
 from tuning_grids import TUNING_GRIDS
 
 # ==== Standard run parameters =======
-n_clusters = 6 # SO classes
-sea_ice_clusters = [5, 6] # default, change with --sea-ice-clusters
+sea_ice_clusters = [5, 6] # default, change with --sea-ice-clusters (or from reg_info with --config)
 
 feat_list = ['CT', 'SA', 'log_mld', 'adt', 'sea_ice',
              'wind_speed', 'atmos_pres_atm', 'max_solar_rad'] # 8 features, leave some out with --drop-features
@@ -58,30 +59,43 @@ def parse_args():
     parser.add_argument('--run-name', default='crusoe_clusteredModel_application',
                         help='Output file prefix')
     parser.add_argument('--n-folds', type=int, default=5, help='Folds for hyperparameter tuning')
-    parser.add_argument('--cv-type', default='platform', choices=['platform', 'kmeans'])
+    parser.add_argument('--cv-type', default=None, choices=['platform', 'profile', 'kmeans'],
+                        help='Fold splits: whole floats/cruises (platform), whole profiles (profile), or '
+                             'k-means regions (kmeans). Default: [regression] cv_type with --config, else platform')
     parser.add_argument('--scoring', default='median_abs_error', help='Tuning fold scoring error')
     parser.add_argument('--n-workers', type=int, default=64)
     parser.add_argument('--threads-per-worker', type=int, default=2)
-    parser.add_argument('--data', default=default_data)
-    parser.add_argument('--sea-ice-clusters', type=int, nargs='+', default=sea_ice_clusters,
+    parser.add_argument('--data', default=None, help='Combined trainval csv (default: [files] reg_trainval with --config)')
+    parser.add_argument('--sea-ice-clusters', type=int, nargs='+', default=None,
                         help='Clusters trained with sea_ice as a feature (from regression-input-prep.py)')
-    parser.add_argument('--drop-features', nargs='+', default=[], choices=feat_list,
+    parser.add_argument('--drop-features', nargs='+', default=[],
                         help='Features in feat_list to leave out (e.g. adt for synthetic data)')
-    parser.add_argument('--application-data', default=default_application_data)
-    parser.add_argument('--savepath', default=default_savepath)
+    parser.add_argument('--application-data', default=None,
+                        help='coreArgo application csv (default: [files] reg_application with --config)')
+    parser.add_argument('--savepath', default=None, help='Results folder (default: [files] model_results with --config)')
     parser.add_argument('--cluster-models', default=None,
                         help='JSON file of {cluster: [algorithm, grid]} from compare_algorithms.py '
                              '(default: CLUSTER_MODELS in this script)')
     parser.add_argument('--save-models', action='store_true',
                         help='Pickle the fitted final models with joblib (off by default)')
-    return parser.parse_args()
+    pipeline.add_model_args(parser)
+    args = parser.parse_args()
+    pipeline.fill_model_args(args)
+    args.data = args.data or default_data
+    args.application_data = args.application_data or default_application_data
+    args.savepath = args.savepath or default_savepath
+    if args.sea_ice_clusters is None:
+        args.sea_ice_clusters = sea_ice_clusters
+    args.cv_type = args.cv_type or 'platform'
+    return args
 
 
 def main():
     args = parse_args()
     savepath = os.path.join(args.savepath, '') # outfile is appended directly to savepath
     os.makedirs(savepath, exist_ok=True)
-    run_feat_list = [x for x in feat_list if x not in args.drop_features]
+    run_feat_list = [x for x in (getattr(args, 'features', None) or feat_list) if x not in args.drop_features]
+    target = getattr(args, 'target', None) or var_predict
 
     # Algorithm and grid names for each cluster, from JSON if given
     if args.cluster_models:
@@ -94,6 +108,10 @@ def main():
     print(f'Cluster models from: {cluster_models_source}')
 
     # Check cluster setup before loading data
+    n_clusters = int(pd.read_csv(args.data, index_col=0, nrows=0).columns.str.fullmatch(r'cluster\d+_prob').sum())
+    if not args.cluster_models: # CLUSTER_MODELS for the clusters in the data; RFR rfr_full for any it does not list
+        cluster_model_names = {k: CLUSTER_MODELS.get(k, ('RFR', 'rfr_full')) for k in range(1, n_clusters + 1)}
+    cluster_model_names = {k: v for k, v in cluster_model_names.items() if k <= n_clusters}
     missing_clusters = set(range(1, n_clusters + 1)) - set(cluster_model_names)
     if missing_clusters:
         raise ValueError(f'Cluster models are missing clusters {sorted(missing_clusters)}')
@@ -106,6 +124,9 @@ def main():
                       for classnum, (algorithm, grid) in cluster_model_names.items()}
 
     trainval_data = pd.read_csv(args.data, index_col=0) # for platformID
+    if args.cv_type == 'profile' and 'profid' not in trainval_data.columns:
+        raise SystemExit(f'--cv-type profile needs a profid column in {args.data}: rerun '
+                         'regression-input-prep.py with [regression] cv_type = "profile"')
     application_data = pd.read_csv(args.application_data, index_col=0)
     print(f'Loaded {len(trainval_data)} training samples from {args.data}')
     print(f'Loaded {len(application_data)} application samples from {args.application_data}')
@@ -118,7 +139,7 @@ def main():
     for classnum, (algorithm, grid) in sorted(cluster_model_names.items()):
         print(f'Cluster {classnum}: {algorithm}, grid: {grid} = {TUNING_GRIDS[grid]}')
     print(f'Tuning folds: {args.n_folds}, run name: {args.run_name}')
-    print(f'Features: {run_feat_list}, sea ice clusters: {args.sea_ice_clusters}')
+    print(f'Features: {run_feat_list}, target: {target}, sea ice clusters: {args.sea_ice_clusters}')
 
     with LocalCluster(n_workers=args.n_workers,
                       threads_per_worker=args.threads_per_worker,
@@ -127,7 +148,7 @@ def main():
         print('Starting dask training: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
         procedures_application.run_model_application(client, trainval_data, application_data,
                                                      n_clusters, args.sea_ice_clusters,
-                                                     run_feat_list, var_predict,
+                                                     run_feat_list, target,
                                                      args.n_folds,
                                                      cluster_models,
                                                      args.cv_type,

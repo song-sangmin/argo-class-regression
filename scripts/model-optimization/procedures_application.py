@@ -37,7 +37,8 @@ def run_model_application(client, trainval_data, application_data,
     :param n_folds: # of folds for hyperparameter tuning
     :param cluster_models: dict of {classnum: (training_algorithm, tuning_grid)},
                            training_algorithm is 'RFR', 'ERT' or 'XGB', tuning_grid is a dict
-    :param cv_type: choose "platform" or "kmeans"
+    :param cv_type: "platform" (folds of whole floats/cruises, platform_id), "profile" (whole profiles,
+                    profid column; crossvalidation platform splits by profid) or "kmeans"
     :param save_models: pickle the fitted final models with joblib (default False)
     :param cluster_models_source: (str) where cluster_models came from, written to the run description
 
@@ -57,8 +58,8 @@ def run_model_application(client, trainval_data, application_data,
                                 trainval_data[trainval_data.cluster==classnum],
                                 n_outer = n_folds,
                                 n_inner = None,
-                                spatial_cv = cv_type,
-                                indexer = 'platform_id')
+                                spatial_cv = 'platform' if cv_type == 'profile' else cv_type,
+                                indexer = 'profid' if cv_type == 'profile' else 'platform_id')
     cvtainers_future = client.scatter(soclass_cvtainers, broadcast=True)
 
     # Regressor, parameter combinations and features for each cluster
@@ -167,7 +168,7 @@ def run_model_application(client, trainval_data, application_data,
                                                     fold_CMV, fold_valDF, feat_list, var_predict, sea_ice_clusters)
 
     oof_predictions = crossvalidation.collapse_folds(ClusteredModel_FoldResults).weighted_validation
-    cal_coeffs = regression.get_clustered_calibration_coeffs(oof_predictions)
+    cal_coeffs = regression.get_clustered_calibration_coeffs(oof_predictions, target_var=var_predict)
 
     ###################
     # 5. APPLY FINAL MODEL

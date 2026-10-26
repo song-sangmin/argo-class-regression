@@ -131,6 +131,9 @@ def create_cv_nest(trainval_data,
                                                                             indexer=indexer, 
                                                                             nfolds=n_split,
                                                                             latitude_scaler = latitude_scaler)
+    else:
+        raise ValueError(f"Unknown spatial_cv {spatial_cv!r}: use 'platform' (with indexer 'platform_id' "
+                         "for floats/cruises or 'profid' for profiles) or 'kmeans'")
 
     return cvtainer
 
@@ -240,18 +243,17 @@ def subset_folds(platDF, type= 'platform', indexer='wmoid', nfolds=5,
             validation_inds['fold' + str(ind+1)] = platDF.index[val_index]
 
     elif type == 'platform': 
-        # platDF[indexer] = platDF[indexer].astype(str) #catch
-        ids = platDF[indexer].astype(str).unique().to_numpy()
+        # Compare as strings: a float-only csv reads platform_id (wmoid) as integers
+        platform_ids = platDF[indexer].astype(str)
+        ids = platform_ids.unique().to_numpy()
         np.random.default_rng(random_state).shuffle(ids)
         holdout_ids = np.array_split(ids, nfolds)
         for k in range(nfolds):
-            # training_inds[('fold'+str(k+1))] = ~platDF[indexer].isin(holdout_ids[k])
-            # validation_inds[('fold'+str(k+1))] = platDF[indexer].isin(holdout_ids[k])
             training_inds['fold' + str(k+1)] = platDF.index[
-                ~platDF[indexer].isin(holdout_ids[k])]
+                ~platform_ids.isin(holdout_ids[k]).to_numpy()]
 
             validation_inds['fold' + str(k+1)] = platDF.index[
-                platDF[indexer].isin(holdout_ids[k])]
+                platform_ids.isin(holdout_ids[k]).to_numpy()]
 
     elif type == 'kmeans': 
         kmeans = KMeans(n_clusters=nfolds, random_state=42)
