@@ -1,31 +1,57 @@
-"""Run configuration shared by the data-processing scripts (L0 through P1).
+"""Run configuration shared by the pipeline scripts (data-processing, clustering, regression,
+model-optimization).
 
-Every create_*.py script takes --config <file.toml> (see configs/ at the repo root). A config
-holds a run's settings (region, years, QC flags, ...) and, in [files], where each stage reads
-and writes. File paths can use {data_root}, {run_dir}, {dataset} (core or bgc) and {yr}. A
-file key can be given per dataset (e.g. L1_core), which is used before the shared key (L1);
-outputs left out of [files] use the run folder layout in DEFAULT_FILES:
+Every script takes --config <file.toml> (see configs/ at the repo root). A config holds a run's
+settings (region, years, QC flags, clustering, regression, ...) and, in [files], where each
+stage reads and writes. File paths can use these placeholders:
+    {data_root} {run_dir}   from [run]
+    {dataset}               core, bgc, soccom, socat, ...
+    {yr}                    for files with one year each
+    {pcm}                   the clustering tag, e.g. pc8_gmm6_dbar500 (from [P2], see pcm_tag())
+Paths can also use ~ and environment variables, e.g. "$PSCRATCH/argoclare-data" on NERSC.
+A file key can be given per dataset (e.g. L1_core), which is used before the shared key (L1),
+and per clustering in a [files.<pcm>] table, which is used before both. Files left out of
+[files] use the run folder layout in DEFAULT_FILES:
 
     <data_root>/<name>/            run_dir
         config.toml                copy of the config, made by the first script run
         provenance/                one json per script run (command, git commit, versions)
         L0/ L1-qc/ L2-mask/ L3-interp/ socat/ ancillary/ P1/
+        P2/<pcm>/                  clustering fits and classified samples, one folder per fit
+        regression/<pcm>/          regression inputs
+        model-optimization/<pcm>/  nested CV and application results
+
+Machines: a [machines.<name>] table in the config overrides any setting (e.g. data_root,
+run_dir, [files] paths, n_jobs) on that machine. It is chosen with --machine <name> or the
+ARGOCLARE_MACHINE environment variable, so one config works on a laptop and on NERSC.
 
 Safeguards:
     - outputs that already exist are not overwritten unless --overwrite is passed
     - a config that differs from <run_dir>/config.toml is refused unless --update-config is
       passed (the old copy is kept as config_<time>.toml)
     - --out-dir writes this script's outputs to another folder (same file names), for tests
+
+In a notebook:
+    from argoclare import pipeline
+    run = pipeline.load('configs/southernOcean_CRUSOE.toml')
+    run.status()                                  # every [files] entry and whether it exists
+    coreINDEX = run.open('L3_index', 'core')
+    p2 = run.open('P2_trainval', pcm='pc8_gmm6_dbar500')
 """
 import argparse
+import copy
 import json
 import os
 import shutil
 import subprocess
 import sys
-import tomllib
 from datetime import datetime
 from importlib import metadata
+
+try:
+    import tomllib
+except ModuleNotFoundError: # Python < 3.11
+    import tomli as tomllib
 
 DEFAULT_FILES = {
     'L0_profiles': '{run_dir}/L0/{dataset}_yr{yr}_profiles.nc',
@@ -36,19 +62,38 @@ DEFAULT_FILES = {
     'L3_index': '{run_dir}/L3-interp/{dataset}INDEX_byProfid.nc',
     'socat_L2': '{run_dir}/socat/socat_resampled_open_ocean_INDEX.nc',
     'mbl': '{run_dir}/ancillary/co2_mbl_combined.nc',
-    'P1_core': '{run_dir}/P1/P1_coreArgo_application_features.nc',
-    'P1_bgc': '{run_dir}/P1/P1_bgcArgo_features.nc',
-    'P1_socat': '{run_dir}/P1/P1_socat_features.nc',
+    'P1': '{run_dir}/P1/P1_{dataset}_features.nc',
+    'P2_finder': '{run_dir}/P2/{pcm}/PCM_finder_{pcm}.parquet',
+    'P2_fit': '{run_dir}/P2/{pcm}/PCM_fit_{pcm}.json',
+    'P2_model': '{run_dir}/P2/{pcm}/PCM_model_{pcm}.joblib',
+    'P2': '{run_dir}/P2/{pcm}/P2_{dataset}_{pcm}.parquet',
+    'P2_trainval': '{run_dir}/P2/{pcm}/P2_combined_trainval_{pcm}.parquet',
+    'P2_test': '{run_dir}/P2/{pcm}/P2_combined_test_{pcm}.parquet',
+    'P2_application': '{run_dir}/P2/{pcm}/P2_application_{pcm}.parquet',
+    'reg_trainval': '{run_dir}/regression/{pcm}/combined_trainval_{pcm}.csv',
+    'reg_application': '{run_dir}/regression/{pcm}/application_{pcm}.csv',
+    'reg_info': '{run_dir}/regression/{pcm}/regression_info_{pcm}.json',
+    'model_results': '{run_dir}/model-optimization/{pcm}',
     'argopy_cache': '{run_dir}/argopy-cache',
 }
 
-PACKAGES = ['argoclare', 'argopy', 'xarray', 'pandas', 'numpy', 'gsw', 'PyCO2SYS']
+PACKAGES = ['argoclare', 'argopy', 'xarray', 'pandas', 'numpy', 'scikit-learn', 'gsw', 'PyCO2SYS']
+
+
+def pcm_tag(n_pca, n_gmm, dbar_limit, exclude_years=None):
+    """Clustering tag used in [files] paths: pc<n_pca>_gmm<n_gmm>_dbar<dbar_limit>[_excl<years>]."""
+    tag = f'pc{n_pca}_gmm{n_gmm}_dbar{dbar_limit:g}'
+    if exclude_years:
+        tag += '_excl' + '-'.join(str(y) for y in sorted(exclude_years))
+    return tag
 
 
 def parser(doc):
     """argparse parser with the options every script shares."""
     p = argparse.ArgumentParser(description=doc, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--config', required=True, help='Run config (.toml), e.g. configs/example.toml')
+    p.add_argument('--machine', default=None,
+                   help='[machines.<name>] profile in the config (default: $ARGOCLARE_MACHINE)')
     p.add_argument('--overwrite', action='store_true', help='Replace output files that already exist')
     p.add_argument('--update-config', action='store_true',
                    help='Accept a config that differs from the copy in the run folder')
@@ -57,16 +102,97 @@ def parser(doc):
     return p
 
 
+def add_pcm_args(p):
+    """Clustering options that override [P2] (a different fit gets its own {pcm} folder)."""
+    p.add_argument('--n-pca', type=int, default=None, help='PCA components (default: [P2] n_pca)')
+    p.add_argument('--n-gmm', type=int, default=None, help='GMM classes (default: [P2] n_gmm)')
+    p.add_argument('--dbar-limit', type=float, default=None, help='Fit pressure levels < this (default: [P2] dbar_limit)')
+    p.add_argument('--exclude-years', type=int, nargs='+', default=None,
+                   help='Years left out of the fit, then classified with it (default: [P2] exclude_years)')
+    return p
+
+
 def start(args, script):
     """Load the config named in args, check it against the run folder copy, and return a Run."""
     return Run(args.config, script, args=args)
 
 
+def load(config_path, machine=None, **pcm):
+    """A Run for reading paths and files (notebooks, model-optimization); writes nothing.
+    pcm: n_pca, n_gmm, dbar_limit, exclude_years overrides, as on the command line."""
+    args = argparse.Namespace(machine=machine, **pcm)
+    return Run(config_path, 'notebook', args=args, freeze=False)
+
+
+def add_model_args(p):
+    """--config, --machine and the clustering options for the model-optimization scripts."""
+    p.add_argument('--config', default=None,
+                   help='Run config (.toml): sets the default --data, --application-data, --savepath, '
+                        '--sea-ice-clusters and --drop-features (with --machine or $ARGOCLARE_MACHINE)')
+    p.add_argument('--machine', default=None, help='[machines.<name>] profile in the config')
+    return add_pcm_args(p)
+
+
+def fill_model_args(args):
+    """Fill the model-optimization options left unset from the run config ([files] reg_trainval,
+    reg_application, model_results, [regression] cv_type, and the sea ice clusters, features and target in reg_info:
+    args.features, args.target). Returns the Run, or None without --config."""
+    if not getattr(args, 'config', None):
+        return None
+    run = load(args.config, machine=args.machine, n_pca=args.n_pca, n_gmm=args.n_gmm,
+               dbar_limit=args.dbar_limit, exclude_years=args.exclude_years)
+    if hasattr(args, 'data') and args.data is None:
+        args.data = run.input('reg_trainval')
+    if hasattr(args, 'application_data') and args.application_data is None:
+        args.application_data = run.input('reg_application')
+    if args.savepath is None:
+        args.savepath = run.path('model_results')
+    if getattr(args, 'cv_type', 0) is None:
+        args.cv_type = run.section('regression').get('cv_type')
+    info_file = run.path('reg_info')
+    if os.path.exists(info_file):
+        with open(info_file) as f:
+            info = json.load(f)
+        if hasattr(args, 'data') and info.get('trainval_file') != os.path.basename(args.data):
+            print(f'Note: {os.path.basename(info_file)} is for {info.get("trainval_file")}, not '
+                  f'{os.path.basename(args.data)}; not using its sea ice clusters or features')
+        else:
+            if getattr(args, 'sea_ice_clusters', 0) is None:
+                args.sea_ice_clusters = info['sea_ice_clusters']
+            if hasattr(args, 'drop_features') and not args.drop_features:
+                args.drop_features = info.get('drop_features', [])
+            args.features, args.target = info.get('features'), info.get('target')
+    elif hasattr(args, 'data'):
+        if hasattr(args, 'drop_features') and not args.drop_features:
+            args.drop_features = run.section('regression').get('drop_features', [])
+        if args.sea_ice_clusters is None:
+            print(f'Note: no {os.path.basename(info_file)}; pass --sea-ice-clusters, or the script default is used')
+    print(f'Run config {os.path.basename(args.config)} (pcm {run.pcm}, machine {run.machine or "default"})')
+    return run
+
+
+def _expand(path):
+    """~ and environment variables (e.g. $PSCRATCH on NERSC) in a config path."""
+    expanded = os.path.expandvars(os.path.expanduser(path))
+    if '$' in expanded:
+        raise SystemExit(f'Config path {path!r} uses an environment variable that is not set here. '
+                         'Set it, or choose another [machines] profile (ARGOCLARE_MACHINE / --machine).')
+    return expanded
+
+
+def _merge(base, over):
+    """Recursive dict update (for machine profiles)."""
+    out = copy.deepcopy(base)
+    for k, v in over.items():
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
 class Run:
-    def __init__(self, config_path, script, args=None):
+    def __init__(self, config_path, script, args=None, freeze=True):
         self.config_path = os.path.abspath(config_path)
         with open(self.config_path, 'rb') as f:
-            self.cfg = tomllib.load(f)
+            self.raw_cfg = tomllib.load(f)
         self.script = os.path.basename(script)
         self.args = args
         self.overwrite = getattr(args, 'overwrite', False)
@@ -74,20 +200,30 @@ class Run:
         self.inputs, self.outputs = [], []
         self.started = datetime.now()
 
+        # Machine profile: [machines.<name>] overrides the rest of the config
+        self.machine = getattr(args, 'machine', None) or os.environ.get('ARGOCLARE_MACHINE')
+        machines = self.raw_cfg.get('machines', {})
+        self.cfg = {k: v for k, v in self.raw_cfg.items() if k != 'machines'}
+        if self.machine in machines:
+            self.cfg = _merge(self.cfg, machines[self.machine])
+        elif self.machine:
+            print(f'Note: no [machines.{self.machine}] in {os.path.basename(config_path)}; using the defaults')
+
         run = self.cfg['run']
         self.name = run['name']
         # Relative paths are relative to the config file, so a run does not depend on the cwd
-        config_dir = os.path.dirname(self.config_path)
-        self.data_root = os.path.normpath(os.path.join(config_dir, os.path.expanduser(run['data_root'])))
-        self.run_dir = os.path.normpath(os.path.join(config_dir, os.path.expanduser(
+        self.config_dir = os.path.dirname(self.config_path)
+        self.data_root = os.path.normpath(os.path.join(self.config_dir, _expand(run['data_root'])))
+        self.run_dir = os.path.normpath(os.path.join(self.config_dir, _expand(
             run.get('run_dir', '{data_root}/{name}').format(data_root=self.data_root, name=self.name))))
         self.ref_time = run.get('ref_time', '2014-01-01')
-        self._freeze(getattr(args, 'update_config', False))
+        if freeze:
+            self._freeze(getattr(args, 'update_config', False))
 
     # %% Settings
 
     def section(self, name):
-        """A config table, e.g. run.section('L1') or run.section('P1.bgc'); {} if missing."""
+        """A config table, e.g. run.section('L1') or run.section('P1.soccom'); {} if missing."""
         table = self.cfg
         for key in name.split('.'):
             table = table.get(key, {})
@@ -117,26 +253,46 @@ class Run:
         lon_ok = (lon180 >= lon_min) & (lon180 <= lon_max) if lon_max - lon_min < 360 else True
         return lon_ok & (lat >= lat_min) & (lat < lat_max)
 
+    @property
+    def p2(self):
+        """[P2] settings with the command line overrides (--n-pca, --n-gmm, --dbar-limit, --exclude-years)."""
+        p2 = dict(self.section('P2'))
+        for key in ['n_pca', 'n_gmm', 'dbar_limit', 'exclude_years']:
+            if getattr(self.args, key, None) is not None:
+                p2[key] = getattr(self.args, key)
+        return p2
+
+    @property
+    def pcm(self):
+        """Clustering tag for {pcm}, e.g. pc8_gmm6_dbar500; None without a [P2] table."""
+        p2 = self.p2
+        if not all(k in p2 for k in ['n_pca', 'n_gmm', 'dbar_limit']):
+            return None
+        return pcm_tag(p2['n_pca'], p2['n_gmm'], p2['dbar_limit'], p2.get('exclude_years'))
+
     # %% Files
 
-    def _template(self, key, dataset=None):
+    def _template(self, key, dataset=None, pcm=None):
         files = self.cfg.get('files', {})
-        for k in ([f'{key}_{dataset}'] if dataset else []) + [key]:
-            if k in files:
-                return files[k]
-        for k in ([f'{key}_{dataset}'] if dataset else []) + [key]:
-            if k in DEFAULT_FILES:
-                return DEFAULT_FILES[k]
+        keys = ([f'{key}_{dataset}'] if dataset else []) + [key]
+        tables = ([files[pcm]] if pcm and isinstance(files.get(pcm), dict) else []) + [files, DEFAULT_FILES]
+        for table in tables:
+            for k in keys:
+                if k in table and not isinstance(table[k], dict):
+                    return table[k]
         raise SystemExit(f'{self.config_path}: no [files] entry for "{key}"'
                          + (f' (or "{key}_{dataset}")' if dataset else ''))
 
-    def path(self, key, dataset=None, **fmt):
+    def path(self, key, dataset=None, pcm=None, **fmt):
         """Resolved path (or list of paths) for a [files] key, with no existence checks."""
-        template = self._template(key, dataset)
+        pcm = pcm or self.pcm
+        template = self._template(key, dataset, pcm)
         def resolve(t):
-            p = os.path.expanduser(t.format(data_root=self.data_root, run_dir=self.run_dir,
-                                            dataset=dataset, **fmt))
-            return os.path.normpath(os.path.join(os.path.dirname(self.config_path), p))
+            if '{pcm}' in t and pcm is None:
+                raise SystemExit(f'{self.config_path}: [files] {key} uses {{pcm}}, but [P2] has no n_pca, n_gmm, dbar_limit')
+            p = _expand(t.format(data_root=self.data_root, run_dir=self.run_dir,
+                                 dataset=dataset, pcm=pcm, **fmt))
+            return os.path.normpath(os.path.join(self.config_dir, p))
         return [resolve(t) for t in template] if isinstance(template, list) else resolve(template)
 
     def template(self, key, dataset=None):
@@ -173,6 +329,44 @@ class Run:
         self.outputs.append(p)
         return p
 
+    def open(self, key, dataset=None, **fmt):
+        """Open a file: netcdf with xarray, parquet/csv with pandas, json as a dict."""
+        import pandas as pd
+        import xarray as xr
+        path = self.path(key, dataset, **fmt)
+        if path.endswith('.nc'):
+            return xr.open_dataset(path)
+        if path.endswith('.parquet'):
+            return pd.read_parquet(path)
+        if path.endswith('.json'):
+            with open(path) as f:
+                return json.load(f)
+        return pd.read_csv(path, index_col=0)
+
+    def status(self, years=None):
+        """Print every [files] entry (with the current {pcm}) and whether it exists."""
+        files = self.cfg.get('files', {})
+        years = years or self.years()
+        print(f'{self.name} ({self.config_path}), pcm {self.pcm}, machine {self.machine or "default"}')
+        print(f'  data_root {self.data_root}\n  run_dir   {self.run_dir}')
+        keys = {k for k, v in files.items() if not isinstance(v, dict)}
+        if isinstance(files.get(self.pcm), dict):
+            keys |= set(files[self.pcm])
+        for key in sorted(keys):
+            base, _, ds = key.rpartition('_') if key.endswith(('_core', '_bgc', '_soccom', '_socat')) else (key, '', None)
+            try:
+                paths = self.path(base, ds, yr='{yr}')
+            except SystemExit:
+                continue
+            paths = paths if isinstance(paths, list) else [paths]
+            missing = []
+            for p in paths:
+                if '{yr}' in p:
+                    missing += [yr for yr in years if not os.path.exists(p.format(yr=yr))]
+                elif not os.path.exists(p):
+                    missing.append(os.path.basename(p))
+            print(f'  {key:18s} {"ok" if not missing else "MISSING " + str(missing)[:60]:20s} {os.path.basename(paths[0])}')
+
     # %% Provenance
 
     def _freeze(self, update):
@@ -182,7 +376,7 @@ class Run:
             if os.path.samefile(frozen, self.config_path):
                 return
             with open(frozen, 'rb') as f:
-                same = tomllib.load(f) == self.cfg
+                same = tomllib.load(f) == self.raw_cfg
             if same:
                 return
             if not update:
@@ -209,6 +403,8 @@ class Run:
         record = {'script': self.script,
                   'command': ' '.join([os.path.basename(sys.executable)] + sys.argv),
                   'config': self.config_path,
+                  'machine': self.machine,
+                  'pcm': self.pcm,
                   'args': {k: v for k, v in vars(self.args).items()} if self.args else {},
                   'started': self.started.isoformat(timespec='seconds'),
                   'finished': datetime.now().isoformat(timespec='seconds'),
