@@ -1,35 +1,38 @@
 # Example workflow: Atlantic sector of the Southern Ocean
 
-A larger version of [example-workflow.md](example-workflow.md). The steps and commands are
+A larger version of [example-workflow-drake.md](example-workflow-drake.md). The steps and commands are
 the same; only the config changes: `configs/example_atlantic.toml`.
 
 | | `example.toml` (Drake Passage) | `example_atlantic.toml` |
 |---|---|---|
 | Region | 70°W–50°W, 65°S–55°S | 70°W–20°E, south of 35°S |
-| Years | 2020 | 2018–2022 |
-| Core / BGC float profiles (L3) | ~280 / ~50 | ~38,000 / ~1,800 |
-| BGC floats with good surface oxygen | 6 | 12–20 each year |
-| Clusters (`[P2] n_gmm`) | 3 | 2 |
-| Training / test years | 2020 / – | 2018–2021 / 2022 |
+| Years | 2018–2022 | 2018–2022 |
+| Core / BGC float profiles (L3) | ~1,600 / ~140 | ~38,000 / ~1,800 |
+| BGC floats with good surface oxygen | 11 in 2018–2021 | 12–20 each year |
+| Clusters (`[P2] n_gmm`) | 2 | 2 |
+| Training / test years | 2018–2021 / 2022 | 2018–2021 / 2022 |
 | `[regression] cv_type` | `profile` | `profile` |
+| Run time on a laptop | about 5 min | about 2 hours (below) |
 
-Same as the Drake example, the regression predicts surface **oxygen** on the BGC floats from
-CT, SA, ADT, max_solar_rad and atmos_pres_atm, and applies the models to the core floats.
+As in the Drake example, the regression predicts surface **oxygen** on the BGC floats and applies
+the models to the core floats, here from CT, SA, ADT, max_solar_rad and atmos_pres_atm.
 
 ## Run it
 
-Follow [example-workflow.md](example-workflow.md) steps 1–4 with:
+Follow [example-workflow-drake.md](example-workflow-drake.md) steps 1–4 with:
 
 ```bash
 cp configs/example_atlantic.toml configs/my_atlantic.toml    # set [files] to your external inputs
 C=configs/my_atlantic.toml
 ```
 
-The external inputs (ERA5, ADT, sea ice, bathymetry, MBL) must cover 70°W–20°E south of 35°S
-for 2018–2022.
+Its features (`CT`, `SA`, `adt`, `max_solar_rad`, `atmos_pres_atm`, in both `[P1]` and `[regression]`)
+need three external inputs: the bathymetry, ERA5 sea level pressure (`era5_slp`) and the CMEMS ADT
+(`adt`). They must cover 70°W–20°E south of 35°S for 2018–2022; the wind, sea ice and MBL files
+aren't read.
 
 To run on NERSC or UW Hyak, use the machine profiles at the bottom of the config; see
-[Running on an HPC system](example-workflow.md#6-running-on-an-hpc-system), which also shows how
+[Running on an HPC system](example-workflow-drake.md#6-running-on-an-hpc-system), which also shows how
 to set the Slurm account, partition and resources with `sbatch` flags instead of editing the job scripts. The data steps take
 about 2 hours on a laptop (below), so a common split is to process the data locally and run the
 nested CV with the full grids on the cluster.

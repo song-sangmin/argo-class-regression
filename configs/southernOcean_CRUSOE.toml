@@ -24,7 +24,7 @@ pres = [0, 2000]                   # dbar
 mode = "expert"                    # all data and QC flags; QC is applied in L1
 params = "all"
 parallel = true
-progress = true                    # set false in batch jobs (argopy needs a terminal for it)
+progress = true                    # turned off automatically without a terminal (batch jobs)
 chunks_maxsize = { time = 30 }
 
 [L0.core]
@@ -68,6 +68,8 @@ n_jobs = 8
 [P1]
 n_jobs = 4
 # seaice_days_before = 7           # also add sea_ice_avg_<N>d
+# features = [...]                 # extra P1 columns; the [regression] features and target (here all
+                                   # gridded inputs) are always added (see example.toml)
 
 [P1.core]                          # create_P1_float_features.py --dataset core
 years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
@@ -149,6 +151,7 @@ P2_trainval = "{data_root}/working-vars/P2-clustered/{pcm}/P2_combined_trainval_
 P2_test = "{data_root}/working-vars/P2-clustered/{pcm}/P2_combined_test_socat_soccom_{pcm}.parquet"
 P2_application = "{data_root}/working-vars/P2-clustered/{pcm}/P2_coreArgo_application_{pcm}.parquet"
 reg_trainval = "{data_root}/working-vars/regression-inputs/combined_trainval_{pcm}.csv"
+reg_test = "{data_root}/working-vars/regression-inputs/combined_test_{pcm}.csv"                # test_years samples; run_model_application.py tests on them
 reg_application = "{data_root}/working-vars/regression-inputs/coreArgo_application_{pcm}.csv"
 reg_info = "{data_root}/working-vars/regression-inputs/regression_info_{pcm}.json"         # sea ice clusters and features, read by model-optimization
 model_results = "{data_root}/argoclare-runs"
@@ -169,6 +172,7 @@ run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/southernOcean_CRUSOE"
 
 [machines.nersc.files]
 reg_trainval = "{data_root}/combined_trainval_{pcm}.csv"
+reg_test = "{data_root}/combined_test_{pcm}.csv"
 reg_application = "{data_root}/coreArgo_application_{pcm}.csv"
 reg_info = "{data_root}/regression_info_{pcm}.json"
 model_results = "/pscratch/sd/s/sangsong/argoclare_runs/results"
