@@ -2,7 +2,7 @@
 
 This guide runs the whole pipeline on a small example: five years (2018–2022) of core and BGC Argo
 floats in the Drake Passage (70°W–50°W, 65°S–55°S, 0–1000 dbar). The whole run, from download to
-models, takes about 5 minutes on a laptop (see [How long it takes](#how-long-it-takes)). The example clusters all float profiles
+models, takes ~5 minutes on a laptop. The example clusters all float profiles
 by their temperature and salinity structure, then trains one regression model per cluster. Each
 model predicts surface **oxygen** on BGC floats from **CT, SA and max_solar_rad** (clear-sky
 solar radiation), and the trained models are applied to the core floats, which have no oxygen
@@ -42,13 +42,13 @@ cp configs/example.toml configs/example_drake.toml
 In `configs/example_drake.toml`:
 
 - `[run] name`: a new name, e.g. `"example_drake"`. Outputs go to `<data_root>/<name>/`. The default
-  `data_root = "../x_data"` is relative to the config file, so that's `x_data/` in the repo (ignored by git).
+  `data_root = "../x_data"` is relative to the config file ('x_data' ignored by git).
 - `[region]`, `[run] years`: the area, depth range and years to download.
 - `[regression]`: what to predict and from what. The example uses
   `target = "oxygen"` and `features = ["CT", "SA", "max_solar_rad"]`.
   Only BGC samples whose `oxygen_qc` is in `target_qc_flags` (1, 2, 5, 8) are used for training.
 - `[P1] features`: the features the P1 step computes. It always adds the `[regression]` features and
-  target too, so list here only extras you may want to try later; changing `[regression] features`
+  target; add extras you may want to try later; changing `[regression] features`
   to one that P1 didn't compute means rerunning P1 (step 4). The example uses the same three.
 - `[files]`: where your copies of the external inputs are (step 3).
 
@@ -90,8 +90,6 @@ If a needed file is missing, P1 stops and names its `[files]` key. If `[regressi
 for a feature that P1 didn't compute, regression prep stops and says to add it to `[P1] features`
 and rerun P1 and `apply_P2_classes.py`; the clustering fit doesn't need rerunning.
 
-For a region outside the Southern Ocean, the bathymetry and any ERA5, ADT and MBL files you use
-must cover it. The sea ice file is for the southern hemisphere only.
 
 ## 4. Run the pipeline
 
@@ -145,11 +143,12 @@ python scripts/clustering/apply_P2_classes.py --config $C --dataset bgc
 python scripts/regression/regression-input-prep.py --config $C
 ```
 
-**Models.** Nested cross-validation picks hyperparameters and estimates the error per cluster.
+**Model training and validation.** Nested cross-validation picks hyperparameters and estimates the error per cluster.
 The application run trains the final models on all the training data, predicts oxygen for the
-core floats, and tests the same models on the held-out 2022 samples. Run these
-from `scripts/model-optimization/`, so the parallel workers can import the helper modules.
-`rfr_test` is a small grid for trying things out; `rfr_full` is the full one (see `tuning_grids.py`).
+core floats, and tests the same models on the held-out 2022 samples. From `--config`, this example uses `[regression] cv_type = "profile"`, which holds out whole profiles instead of whole floats.
+
+
+Run these from `scripts/model-optimization/`; the optional argument `rfr_test` is a small grid for trying things out; `rfr_full` is a more comprehensive tuning grid (edit in `tuning_grids.py`).
 
 ```bash
 cd scripts/model-optimization
@@ -158,51 +157,25 @@ python run_model_application.py --config ../../$C
 ```
 
 `--config` gives these scripts the data files, the results folder (`<run_dir>/model-optimization/<pcm>/`),
-the target, the features and the folds. The example sets `[regression] n_outer = 5` and
-`n_inner = 2` to keep the run short (the defaults are 10 and 5; `--n-outer` and `--n-inner`
-override them). The application step tunes each cluster's final model on the `rfr_full` grid.
+the target, the features and the folds. (Example uses 5 outer, 2 inner folds. Defaults are 10 and 5.)
+
+**Model testing and application.**
+
+The application step tunes each cluster's final model on the `rfr_full` grid.
 
 The test set is used only to evaluate the final models, never to tune or calibrate them. Its
 results are in `crusoe_clusteredModel_application_testMetrics_acc<date>.csv` (RMSE, MAE and bias,
-overall and by cluster, uncalibrated and calibrated) and `_testPredictions_acc<date>.csv`. With
-`--config`, the application uses the test csv whenever regression prep made one (`[regression]
+overall and by cluster, uncalibrated and calibrated) and `_testPredictions_acc<date>.csv`. 
+
+
+With `--config`, the application uses the test csv whenever regression prep made one (`[regression]
 test_years` set); `--no-test` skips it and `--test-data <csv>` uses another file.
 
 > **For a ready-made larger run**, see [example-workflow-atlantic.md](example-workflow-atlantic.md):
 > the Atlantic sector, 2018–2022, 2 clusters, with measured run times.
->
-> **The model step needs enough training data.** The Drake Passage in 2018–2021 has only
-> 11 BGC floats (130 profiles) with good oxygen for training. That's enough to run and
-> inspect every step, but thin for training and validating per-cluster models. This example uses
-> `[regression] cv_type = "profile"`, which holds out whole profiles instead of whole floats.
-> That needs fewer floats, but its error estimates are optimistic (see
-> [example-workflow-atlantic.md](example-workflow-atlantic.md#choosing-the-cross-validation-folds-cv_type)).
-> With `cv_type = "platform"`, every cluster needs several floats. For example, the whole
-> Southern Ocean (south of 35°S) for 2014–2023 has 187 BGC floats with good surface oxygen
-> (at least 34 per cluster with 6 clusters); that setup was tested on 2026-10-23, with a
-> cross-validated RMSE of 8.0 µmol/kg against an oxygen standard deviation of 34.9 µmol/kg.
 
-### How long it takes
 
-Measured on 2026-10-27 on a laptop (Apple silicon, 14 cores) with a home internet connection:
-
-| Step | Time | Notes |
-|---|---|---|
-| Example data (`pixi run get-example-data`) | 7 s | once |
-| L0 download (ERDDAP), core and BGC side by side | 2.4 min | 1,803 core and 319 BGC profiles; depends on the server |
-| L1 QC, L2 mask, L3 regrid | 39 s | 1,584 core and 143 BGC profiles kept |
-| P1 features | 5 s | |
-| P2 fit and classify | 6 s | 460 and 1,121 profiles in the 2 clusters |
-| Regression prep | 1 s | 130 training samples (2018–2021), 13 test (2022), 1,441 core profiles to apply the models to |
-| Nested CV (`rfr_test`, 5 outer × 2 inner folds) | 6 s | oxygen RMSE 5.4 µmol/kg (MAE 3.9) against a standard deviation of 19.3 |
-| Model application (`rfr_full` grid, 5 tuning folds), with the test | 58 s | 2022 test RMSE 7.3 µmol/kg (MAE 5.0; 6.4 calibrated), 13 samples from 2 floats |
-| **Total** | **4.3 min** | |
-
-With `profile` folds and 11 floats, the cross-validation error is optimistic. The test error on
-2022, from floats and a year the models never saw, is higher, as expected. With 13 test samples
-both numbers show that the steps work, not how good the method is (see the note above).
-
-## 5. What you get
+## 5. Outputs
 
 ```
 x_data/example_drake/
