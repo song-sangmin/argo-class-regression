@@ -18,7 +18,8 @@ Differences from argoclare.preprocessing:
 add_sea_level_pressure() uses the nearest ERA5 grid point, matching the Oct 2026 fix to
 argoclare preprocessing.add_sea_level_pressure().
 Gridded files are passed as paths with {yr} (from the run config, see pipeline.Run.feature_files()),
-since joblib workers re-import this module.
+since joblib workers re-import this module. Only the files that the run's features need are
+used (needed_files(), from [P1] features and the [regression] features and target).
 """
 import numpy as np
 import pandas as pd
@@ -30,6 +31,35 @@ from argoclare import oceantools as mod_ocean
 from argoclare import preprocessing as mod_prep
 
 ref_time = '2014-01-01' # default origin of linear_time; runs use [run] ref_time
+
+# Gridded inputs (pipeline.Run.feature_files() names) and the P1 columns that need them.
+# Time variables, max_solar_rad and log_mld need no external file and are always added.
+FILE_COLUMNS = {
+    'slp': ['atmos_pres_Pa', 'atmos_pres_atm'],
+    'mbl': ['atmos_co2_ppm', 'sst', 'sss', 'vapor_pres_atm', 'pco2_atmos', 'delta_pco2'],
+    'adt': ['adt'],
+    'wind': ['wind_speed'],
+    'seaice': ['sea_ice'],
+}
+
+
+def needed_files(features):
+    """Gridded inputs needed for a list of P1 columns (features and target); all of them if
+    features is None. The MBL pCO2 also needs the sea level pressure."""
+    if features is None:
+        return set(FILE_COLUMNS)
+    names = {name for name, cols in FILE_COLUMNS.items()
+             if any(f in cols or (name == 'seaice' and f.startswith('sea_ice_avg_')) for f in features)}
+    return names | {'slp'} if 'mbl' in names else names
+
+
+def run_feature_files(run, years, always=()):
+    """The gridded files a run's P1 step needs (plus `always`), checked for every year."""
+    features = run.p1_features()
+    names = needed_files(features) | set(always)
+    print(f'P1 features: {"all" if features is None else ", ".join(features)}; gridded inputs: '
+          + (', '.join(n for n in FILE_COLUMNS if n in names) or 'none'))
+    return run.feature_files(years, names)
 
 
 # %% Grid sampling
@@ -179,13 +209,19 @@ def save_netcdf(df, dim, path, attrs, coords=('datetime', 'latitude', 'longitude
 
 
 def add_all_features(df, yr, files, ref_time=ref_time, seaice_days_before=None):
-    """All P1 features for samples from one year. files: {slp, wind, mbl, adt, seaice} paths."""
+    """P1 features for samples from one year. files: paths for any of {slp, mbl, adt, wind, seaice}
+    (pipeline.Run.feature_files()); features from a file that is not given are left out."""
     df = add_time_vars(df, ref_time)
-    df = add_sea_level_pressure(df, yr, files['slp'])
-    df = add_atmospheric_co2(df, files['mbl'])
-    df = add_adt(df, yr, files['adt'])
-    df = add_wind_speed(df, yr, files['wind'])
-    df = add_sea_ice(df, yr, files['seaice'], days_before=seaice_days_before)
+    if 'slp' in files:
+        df = add_sea_level_pressure(df, yr, files['slp'])
+    if 'mbl' in files:
+        df = add_atmospheric_co2(df, files['mbl'])
+    if 'adt' in files:
+        df = add_adt(df, yr, files['adt'])
+    if 'wind' in files:
+        df = add_wind_speed(df, yr, files['wind'])
+    if 'seaice' in files:
+        df = add_sea_ice(df, yr, files['seaice'], days_before=seaice_days_before)
     df = add_solar_radiation(df)
     if 'mld' in df.columns:
         df['log_mld'] = np.log(df['mld'])

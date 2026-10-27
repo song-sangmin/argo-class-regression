@@ -9,6 +9,10 @@ pressure level:
     ocean:   CMEMS ADT (adt), ERA5 10 m wind speed (wind_speed), NSIDC sea ice (sea_ice;
              optionally sea_ice_avg_<N>d with [P1] seaice_days_before = N), clear-sky
              max_solar_rad, log_mld
+Only the features the run uses are added: [P1] features, plus the [regression] features and
+target (the time variables, max_solar_rad and log_mld always). The gridded files the others
+need (p1_features.FILE_COLUMNS) must exist for every year; the rest are not read. Without
+features in the config, all of them are added.
 Features are looked up with the vectorized functions in p1_features.py (see there for the
 differences from argoclare.preprocessing, including the sea level pressure longitude fix).
 Years ([P1.<dataset>] years, else [run] years) are processed in parallel. Reads [files]
@@ -53,7 +57,7 @@ def main():
     cfg = run.section('P1')
     years = run.years(f'P1.{args.dataset}')
     index_file = run.input('L3_index', args.dataset)
-    files = run.feature_files(years)
+    files = p1_features.run_feature_files(run, years)
     savefile = run.output('P1', args.dataset)
 
     print('Reading ' + index_file)

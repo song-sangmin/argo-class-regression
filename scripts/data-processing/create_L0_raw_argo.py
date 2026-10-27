@@ -22,6 +22,7 @@ Usage:
     python create_L0_raw_argo.py --config ../../configs/example.toml --dataset core
     python create_L0_raw_argo.py --config ../../configs/example.toml --dataset bgc --years 2020
 """
+import sys
 from datetime import datetime
 
 import argopy
@@ -66,10 +67,14 @@ def main():
     else:
         argopy.set_options(src='erddap') # Ifremer database, updated daily
     ds = 'phy' if args.dataset == 'core' else 'bgc'
+    fetcher_kwargs = dict(run.section('L0.fetcher'))
+    if fetcher_kwargs.get('progress') and not sys.stdout.isatty():
+        print('No terminal (batch job or redirected output): argopy progress display off')
+        fetcher_kwargs['progress'] = False
 
     for yr in years:
         print(f'===> Fetching {yr} {args.dataset}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
-        profiles, index = fetch_year(yr, ds, run.box, run.pres, run.section('L0.fetcher'))
+        profiles, index = fetch_year(yr, ds, run.box, run.pres, fetcher_kwargs)
         profiles_file, index_file = outputs[yr]
         profiles.assign_attrs(run.attrs()).to_netcdf(profiles_file)
         index.to_csv(index_file)

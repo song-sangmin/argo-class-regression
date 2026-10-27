@@ -12,8 +12,9 @@ Replaces 1.3_P1_socat_features_with_colocation.ipynb, one row per L2 SOCAT sampl
        profile in the window are kept with nearest_profid '' (dropped in P2).
     3. SA, CT from sal and sst at the surface; ERA5 sea level pressure; pco2_ocean from fco2rec
        with PyCO2SYS (same call as argoclare's convert_socat_fco2(), on all samples at once)
-    4. The same features as the float P1 datasets (p1_features), log_mld from the colocated
-       profile, and delta_pco2 = pco2_ocean - pco2_atmos
+    4. The same features as the float P1 datasets (p1_features; ADT, wind and sea ice only if the
+       run's features use them), log_mld from the colocated profile, and
+       delta_pco2 = pco2_ocean - pco2_atmos (so ERA5 sea level pressure and MBL CO2 are always needed)
 Writes [files] P1_socat, one netcdf along 'sample' (longitude -180 to 180).
 
 Usage:
@@ -117,9 +118,12 @@ def process_year(yearDF, yr, files, ref_time, seaice_days_before=None):
     df = p1_features.add_sea_level_pressure(df, yr, files['slp'])
     df = add_socat_pco2(df)
     df = p1_features.add_atmospheric_co2(df, files['mbl'])
-    df = p1_features.add_adt(df, yr, files['adt'])
-    df = p1_features.add_wind_speed(df, yr, files['wind'])
-    df = p1_features.add_sea_ice(df, yr, files['seaice'], days_before=seaice_days_before)
+    if 'adt' in files:
+        df = p1_features.add_adt(df, yr, files['adt'])
+    if 'wind' in files:
+        df = p1_features.add_wind_speed(df, yr, files['wind'])
+    if 'seaice' in files:
+        df = p1_features.add_sea_ice(df, yr, files['seaice'], days_before=seaice_days_before)
     df = p1_features.add_solar_radiation(df)
     df['log_mld'] = np.log(df['mld'])
     print(f'  {yr}: {len(df)} samples in {(datetime.now() - t0).total_seconds() / 60:.1f} min')
@@ -140,7 +144,7 @@ def main():
     l2_file = run.input('socat_L2')
     indexes = [run.input('L3_index', 'core'), run.input('L3_index', 'bgc')]
     datas = [run.input('L3_data', 'core'), run.input('L3_data', 'bgc')]
-    files = run.feature_files(years)
+    files = p1_features.run_feature_files(run, years, always={'slp', 'mbl'})
     savefile = run.output('P1_socat')
 
     # older L2 files use datetime as the dimension, newer ones 'sample'

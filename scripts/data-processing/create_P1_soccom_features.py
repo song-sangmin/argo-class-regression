@@ -9,6 +9,7 @@ Replaces the feature steps of 1.2_P1_bgcArgo_feature_prep.ipynb, one row per SOC
        pco2_ocean = [P1.soccom] pco2_var (CRUSOE: pCO2_pHbias5_pK01)
     3. Add the same features as the core P1 dataset with p1_features.add_all_features(), from
        the sample's own time, position, CT, SA and mld; then delta_pco2 = pco2_ocean - pco2_atmos
+       (so ERA5 sea level pressure and MBL CO2 are always needed)
     4. Match each sample to a float profid: the nearest profile of the same WMO within
        [P1.soccom] match_hours (1 h) in the [files] L3_index core + bgc (core first, as in
        clustering). Unmatched samples are kept with profid '' and match_dt_minutes NaN;
@@ -107,7 +108,7 @@ def main():
     years = run.years('P1.soccom')
     soccom_dir = run.input('soccom_dir')
     indexes = [run.input('L3_index', 'core'), run.input('L3_index', 'bgc')]
-    files = run.feature_files(years)
+    files = p1_features.run_feature_files(run, years, always={'slp', 'mbl'})
     savefile = run.output('P1', 'soccom')
 
     soccom_df = read_soccom_averages(soccom_dir, depth, f'{min(years)}-01-01', f'{max(years) + 1}-01-01', run.in_box)

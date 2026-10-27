@@ -10,13 +10,17 @@ in `../clustering/README.md`.
 
 | Configs | |
 |---|---|
-| `configs/example.toml` | Small example: Drake Passage, 2020, ERDDAP, core + BGC floats. Outputs go to `x_data/example_drake2020/`. |
+| `configs/example.toml` | Small example: Drake Passage, 2018–2022, ERDDAP, core + BGC floats; bathymetry from `pixi run get-example-data`. Outputs go to `x_data/example_drake/`. |
 | `configs/southernOcean_CRUSOE.toml` | The CRUSOE dataset: points at the files currently in use (SOCCOM + SOCAT training data). |
 | `configs/synthetic_CRUSOE.toml` | The CRUSOE synthetic (E3SM) run (`../synthetic-processing/`). |
 
 To start a new run, copy `example.toml`, give it a new `[run] name`, and point the external inputs
 in `[files]` (bathymetry, ERA5, CMEMS ADT, NSIDC sea ice, NOAA MBL; optionally SOCAT and SOCCOM) at
-your own copies.
+your own copies. Only the bathymetry is always needed. The P1 scripts add the features in
+`[P1] features` plus the `[regression] features` and `target`, and read only the gridded files
+those need (`FILE_COLUMNS` in `p1_features.py`; see "Download the external inputs" in
+`example-workflow-drake.md`). SOCCOM and SOCAT P1 always need ERA5 sea level pressure and the MBL CO2,
+for `delta_pco2`. `create_mbl_co2_dataset.py` is only needed when the MBL CO2 is.
 
 | Stage | Script | `[files]` key |
 |---|---|---|
@@ -24,7 +28,7 @@ your own copies.
 | L1 QC | `create_L1_QC_argo.py --dataset core\|bgc` | `L1` |
 | L2 open ocean | `create_L2_masked_argo.py --dataset core\|bgc` | `L2` |
 | L3 regridded | `create_L3_gridded_coreArgo.py`, `create_L3_gridded_bgcArgo.py` | `L3_data`, `L3_index` |
-| MBL CO2 | `create_mbl_co2_dataset.py` | `mbl` |
+| MBL CO2 (if needed) | `create_mbl_co2_dataset.py` | `mbl` |
 | P1 float features | `create_P1_float_features.py --dataset core\|bgc` | `P1_core`, `P1_bgc` |
 | P1 SOCCOM (optional) | `create_P1_soccom_features.py` | `P1_soccom` |
 | L2 SOCAT (optional) | `create_L2_resampled_masked_socat.py` | `socat_L2` |
