@@ -20,7 +20,8 @@ def run_model_application(client, trainval_data, application_data,
                           cv_type, scoring_metric,
                           outpath, outfile,
                           save_models=False,
-                          cluster_models_source=None):
+                          cluster_models_source=None,
+                          test_data=None):
     """ Main dask implementation
     Train one final clustered model on trainval_data and apply it to application_data.
 
@@ -41,6 +42,8 @@ def run_model_application(client, trainval_data, application_data,
                     profid column; crossvalidation platform splits by profid) or "kmeans"
     :param save_models: pickle the fitted final models with joblib (default False)
     :param cluster_models_source: (str) where cluster_models came from, written to the run description
+    :param test_data: optional pd Dataframe of held-out samples (features, target, cluster{k}_prob);
+                      the final models are evaluated on it after training, without using it to tune or calibrate
 
     :return: application_data with columns cluster{k}_pred, weighted_pred, cluster{k}_calpred, lincal_pred
     """
@@ -184,6 +187,14 @@ def run_model_application(client, trainval_data, application_data,
 
     application_data = apply_final_model(final_CMV, application_data, feat_list, var_predict,
                                          sea_ice_clusters, n_clusters)
+    if test_data is not None:
+        print('Evaluating the final clustered model on the test data...')
+        test_data = apply_final_model(final_CMV, test_data, feat_list, var_predict,
+                                      sea_ice_clusters, n_clusters)
+        test_data['test_error'] = test_data['weighted_pred'] - test_data[var_predict]
+        test_data['calibrated_test_error'] = test_data['lincal_pred'] - test_data[var_predict]
+        test_metrics = get_test_metrics(test_data)
+        print(test_metrics.round(3).to_string())
 
     #############
     # SAVE RESULTS
@@ -210,6 +221,11 @@ def run_model_application(client, trainval_data, application_data,
     ClusteredModel_TuningResults.to_csv(savefiles['tuning scores'])
     ClusteredModel_BestParams.to_csv(savefiles['best params'])
     ClusteredModel_CalCoeffs.to_csv(savefiles['calibration coefficients'])
+    if test_data is not None:
+        savefiles['test predictions'] = outpath + outfile + '_testPredictions_acc' + datetag + '.csv'
+        savefiles['test metrics'] = outpath + outfile + '_testMetrics_acc' + datetag + '.csv'
+        test_data.to_csv(savefiles['test predictions'])
+        test_metrics.to_csv(savefiles['test metrics'])
 
     if save_models:
         savefiles['final models'] = outpath + outfile + '_finalModels_acc' + datetag + '.joblib'
@@ -231,6 +247,11 @@ def run_model_application(client, trainval_data, application_data,
         file.write('N_TRAINVAL: ' + str(len(trainval_data)) + '\n')
         file.write('N_APPLICATION: ' + str(len(application_data)) + '\n')
         file.write('N_PREDICTED: ' + str(application_data['weighted_pred'].notna().sum()) + '\n')
+        if test_data is not None:
+            overall = test_metrics.loc['all']
+            file.write('N_TEST: ' + str(len(test_data)) + '\n')
+            file.write(f"TEST_RMSE: {overall['rmse']:.4f} (calibrated {overall['calibrated_rmse']:.4f})\n")
+            file.write(f"TEST_MAE: {overall['mae']:.4f} (calibrated {overall['calibrated_mae']:.4f})\n")
         for classnum in range(1, n_clusters+1):
             training_algorithm, tuning_grid = cluster_models[classnum]
             file.write(f"CLUSTER{classnum}: {training_algorithm}\n")
@@ -242,6 +263,24 @@ def run_model_application(client, trainval_data, application_data,
 
     del tuning_futures, fold_futures, final_futures, cvtainers_future
     return application_data
+
+
+def get_test_metrics(test_data):
+    """n, RMSE, MAE and bias (prediction - target) of the uncalibrated (weighted_pred) and
+    calibrated (lincal_pred) test predictions, for all samples and for each assigned cluster."""
+    def metrics(df):
+        out = {'n': len(df)}
+        for prefix, col in [('', 'test_error'), ('calibrated_', 'calibrated_test_error')]:
+            err = df[col].dropna()
+            out.update({prefix + 'rmse': np.sqrt((err**2).mean()), prefix + 'mae': err.abs().mean(),
+                        prefix + 'bias': err.mean()})
+        return out
+    rows = {'all': metrics(test_data)}
+    for classnum, df in test_data.groupby('cluster'):
+        rows['cluster' + str(int(classnum))] = metrics(df)
+    test_metrics = pd.DataFrame.from_dict(rows, orient='index')
+    test_metrics.index.name = 'samples'
+    return test_metrics
 
 
 def get_regressor(training_algorithm):

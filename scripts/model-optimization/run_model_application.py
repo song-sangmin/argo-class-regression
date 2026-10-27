@@ -8,6 +8,10 @@ fitting a final model on all of that cluster's data.
 The 6 class models are applied (weighted by cluster probabilities) 
 to add cluster{k}_pred, weighted_pred, cluster{k}_calpred and lincal_pred.
 
+With a test set (--test-data, or [files] reg_test with --config), the same final models are
+evaluated on it: <run name>_testPredictions and _testMetrics (RMSE, MAE and bias, overall and
+by cluster, uncalibrated and calibrated). The test set is not used for tuning or calibration.
+
 Starts a LocalCluster on the node Slurm allocated, same as run_dask_nested_cv.py.
 
 Usage:
@@ -58,7 +62,8 @@ def parse_args():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--run-name', default='crusoe_clusteredModel_application',
                         help='Output file prefix')
-    parser.add_argument('--n-folds', type=int, default=5, help='Folds for hyperparameter tuning')
+    parser.add_argument('--n-folds', type=int, default=None,
+                        help='Folds for hyperparameter tuning. Default: [regression] n_folds with --config, else 5')
     parser.add_argument('--cv-type', default=None, choices=['platform', 'profile', 'kmeans'],
                         help='Fold splits: whole floats/cruises (platform), whole profiles (profile), or '
                              'k-means regions (kmeans). Default: [regression] cv_type with --config, else platform')
@@ -72,6 +77,10 @@ def parse_args():
                         help='Features in feat_list to leave out (e.g. adt for synthetic data)')
     parser.add_argument('--application-data', default=None,
                         help='coreArgo application csv (default: [files] reg_application with --config)')
+    parser.add_argument('--test-data', default=None,
+                        help='Held-out test csv to evaluate the final models on (default: [files] reg_test with '
+                             '--config, if regression-input-prep.py made it)')
+    parser.add_argument('--no-test', action='store_true', help='Skip the test set, even if [files] reg_test exists')
     parser.add_argument('--savepath', default=None, help='Results folder (default: [files] model_results with --config)')
     parser.add_argument('--cluster-models', default=None,
                         help='JSON file of {cluster: [algorithm, grid]} from compare_algorithms.py '
@@ -87,6 +96,7 @@ def parse_args():
     if args.sea_ice_clusters is None:
         args.sea_ice_clusters = sea_ice_clusters
     args.cv_type = args.cv_type or 'platform'
+    args.n_folds = args.n_folds or 5
     return args
 
 
@@ -130,6 +140,16 @@ def main():
     application_data = pd.read_csv(args.application_data, index_col=0)
     print(f'Loaded {len(trainval_data)} training samples from {args.data}')
     print(f'Loaded {len(application_data)} application samples from {args.application_data}')
+    test_data = None
+    if args.test_data and not args.no_test:
+        test_data = pd.read_csv(args.test_data, index_col=0)
+        print(f'Loaded {len(test_data)} test samples from {args.test_data} (not used for tuning or calibration)')
+        test_cols = run_feat_list + [target] + ['cluster' + str(k) + '_prob' for k in range(1, n_clusters + 1)]
+        missing_cols = [x for x in test_cols if x not in test_data.columns]
+        if missing_cols:
+            raise ValueError(f'Test data is missing columns {missing_cols}')
+    else:
+        print('No test set' + (' (--no-test)' if args.no_test else ''))
 
     required_cols = run_feat_list + ['cluster' + str(k) + '_prob' for k in range(1, n_clusters + 1)]
     missing_cols = [x for x in required_cols if x not in application_data.columns]
@@ -156,7 +176,8 @@ def main():
                                                      savepath,
                                                      args.run_name,
                                                      save_models=args.save_models,
-                                                     cluster_models_source=cluster_models_source)
+                                                     cluster_models_source=cluster_models_source,
+                                                     test_data=test_data)
         print('Finished model application at: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
 
 

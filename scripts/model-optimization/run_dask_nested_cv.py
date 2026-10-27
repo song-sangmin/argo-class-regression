@@ -40,9 +40,11 @@ def parse_args():
     parser.add_argument('grid', choices=sorted(TUNING_GRIDS),
                         help='Name of tuning grid in tuning_grids.py')
     parser.add_argument('--run-name', default=None,
-                        help='Output file prefix (default: crusoe_<ALGORITHM>_platformCV_<grid>)')
-    parser.add_argument('--n-outer', type=int, default=10, help='Outer folds (error estimation)')
-    parser.add_argument('--n-inner', type=int, default=5, help='Inner folds (tuning)')
+                        help='Output file prefix (default: crusoe_<ALGORITHM>_<cv_type>CV_grid_<grid>)')
+    parser.add_argument('--n-outer', type=int, default=None,
+                        help='Outer folds (error estimation). Default: [regression] n_outer with --config, else 10')
+    parser.add_argument('--n-inner', type=int, default=None,
+                        help='Inner folds (tuning). Default: [regression] n_inner with --config, else 5')
     parser.add_argument('--cv-type', default=None, choices=['platform', 'profile', 'kmeans'],
                         help='Fold splits: whole floats/cruises (platform), whole profiles (profile), or '
                              'k-means regions (kmeans). Default: [regression] cv_type with --config, else platform')
@@ -67,13 +69,15 @@ def parse_args():
     if args.sea_ice_clusters is None:
         args.sea_ice_clusters = sea_ice_clusters
     args.cv_type = args.cv_type or 'platform'
+    args.n_outer = args.n_outer or 10
+    args.n_inner = args.n_inner or 5
     return args
 
 
 def main():
     args = parse_args()
     tuning_grid = TUNING_GRIDS[args.grid]
-    run_name = args.run_name or f'crusoe_{args.algorithm}_platformCV_{args.grid}'
+    run_name = args.run_name or f'crusoe_{args.algorithm}_{args.cv_type}CV_grid_{args.grid}'
     savepath = os.path.join(args.savepath, '') # outfile is appended directly to savepath
     os.makedirs(savepath, exist_ok=True)
     run_feat_list = [x for x in (getattr(args, 'features', None) or feat_list) if x not in args.drop_features]

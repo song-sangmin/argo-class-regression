@@ -19,7 +19,7 @@ Anything after the grid name goes to the Python script (--run-name, --n-outer, -
 
 Submit from this folder: the job runs from the folder `sbatch` is called from (or `ARGOCLARE_SRC_DIR`). To keep the logs on pscratch as before, add `-o /pscratch/sd/s/sangsong/argoclare_runs/logs/%x_%j.out`.
 
-**Other clusters (e.g. UW Hyak)** need no edits to the job scripts: pass `-A <account> -p <partition> -q <qos> -C <feature>` to `sbatch` (or set `SBATCH_ACCOUNT`, `SBATCH_PARTITION`, ...), set `ARGOCLARE_ENV_SETUP` to the commands that activate the environment (default `module load python && conda activate dask-cv`; `""` to use the environment you submit from), and `ARGOCLARE_MACHINE` to the config's machine profile. See "Running on an HPC system" in `example-workflow.md`.
+**Other clusters (e.g. UW Hyak)** need no edits to the job scripts: pass `-A <account> -p <partition> -q <qos> -C <feature>` to `sbatch` (or set `SBATCH_ACCOUNT`, `SBATCH_PARTITION`, ...), set `ARGOCLARE_ENV_SETUP` to the commands that activate the environment (default `module load python && conda activate dask-cv`; `""` to use the environment you submit from), and `ARGOCLARE_MACHINE` to the config's machine profile. See "Running on an HPC system" in `example-workflow-drake.md`.
 
 
 
@@ -154,3 +154,5 @@ sbatch -J app_cmp20261015 submit_model_application.sbatch \
 ```
 
 Without `--cluster-models`, `run_model_application.py` uses the `CLUSTER_MODELS` dict at the top of the script. The run description records which one was used. Add `--save-models` to also pickle the fitted models.
+
+**Test set.** With `--test-data <csv>` (or `--config` and a `[files] reg_test` that exists), the application also evaluates the same final models on held-out samples, e.g. the CRUSOE 2024 test year. It writes `<run name>_testPredictions_acc<date>.csv` and `_testMetrics_acc<date>.csv` (RMSE, MAE and bias, overall and by cluster, uncalibrated and calibrated), and the run description gets `N_TEST`, `TEST_RMSE` and `TEST_MAE`. The test set is never used for tuning or calibration. `--no-test` skips it. `regression-input-prep.py` writes the test csv when `[regression] test_years` is set; copy it to `x_localdata/` on NERSC with the other csvs.

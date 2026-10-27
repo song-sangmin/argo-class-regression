@@ -71,6 +71,7 @@ DEFAULT_FILES = {
     'P2_test': '{run_dir}/P2/{pcm}/P2_combined_test_{pcm}.parquet',
     'P2_application': '{run_dir}/P2/{pcm}/P2_application_{pcm}.parquet',
     'reg_trainval': '{run_dir}/regression/{pcm}/combined_trainval_{pcm}.csv',
+    'reg_test': '{run_dir}/regression/{pcm}/combined_test_{pcm}.csv',
     'reg_application': '{run_dir}/regression/{pcm}/application_{pcm}.csv',
     'reg_info': '{run_dir}/regression/{pcm}/regression_info_{pcm}.json',
     'model_results': '{run_dir}/model-optimization/{pcm}',
@@ -135,7 +136,7 @@ def add_model_args(p):
 
 def fill_model_args(args):
     """Fill the model-optimization options left unset from the run config ([files] reg_trainval,
-    reg_application, model_results, [regression] cv_type, and the sea ice clusters, features and target in reg_info:
+    reg_application, reg_test (if it exists), model_results, [regression] cv_type, n_outer, n_inner, n_folds, and the sea ice clusters, features and target in reg_info:
     args.features, args.target). Returns the Run, or None without --config."""
     if not getattr(args, 'config', None):
         return None
@@ -145,10 +146,16 @@ def fill_model_args(args):
         args.data = run.input('reg_trainval')
     if hasattr(args, 'application_data') and args.application_data is None:
         args.application_data = run.input('reg_application')
+    if hasattr(args, 'test_data') and args.test_data is None and not getattr(args, 'no_test', False):
+        test_file = run.path('reg_test')  # test samples from regression-input-prep.py, if it made them
+        args.test_data = test_file if os.path.exists(test_file) else None
     if args.savepath is None:
         args.savepath = run.path('model_results')
     if getattr(args, 'cv_type', 0) is None:
         args.cv_type = run.section('regression').get('cv_type')
+    for key in ('n_outer', 'n_inner', 'n_folds'): # fold counts, e.g. [regression] n_outer = 5
+        if getattr(args, key, 0) is None:
+            setattr(args, key, run.section('regression').get(key))
     info_file = run.path('reg_info')
     if os.path.exists(info_file):
         with open(info_file) as f:
@@ -308,14 +315,29 @@ class Run:
             self.inputs.append(p)
         return paths
 
-    def feature_files(self, years):
+    def p1_features(self):
+        """Columns P1 should compute: [P1] features, plus the [regression] features (without
+        drop_features) and target. None if neither table lists features (compute all)."""
+        p1, reg = self.section('P1'), self.section('regression')
+        if 'features' not in p1 and 'features' not in reg:
+            return None
+        drop = reg.get('drop_features', [])
+        wanted = p1.get('features', []) + [f for f in reg.get('features', []) if f not in drop]
+        return list(dict.fromkeys(wanted + ([reg['target']] if 'target' in reg else [])))
+
+    def feature_files(self, years, names=('slp', 'wind', 'adt', 'seaice', 'mbl')):
         """Gridded P1 feature files for p1_features.add_all_features(), as paths with {yr};
-        checks every year's file exists first."""
+        only the given names (p1_features.needed_files()), each checked for every year first."""
         keys = {'slp': 'era5_slp', 'wind': 'era5_wind', 'adt': 'adt', 'seaice': 'seaice'}
-        for key in keys.values():
-            for yr in years:
-                self.input(key, yr=yr)
-        return {name: self.template(key) for name, key in keys.items()} | {'mbl': self.input('mbl')}
+        files = {}
+        for name, key in keys.items():
+            if name in names:
+                for yr in years:
+                    self.input(key, yr=yr)
+                files[name] = self.template(key)
+        if 'mbl' in names:
+            files['mbl'] = self.input('mbl')
+        return files
 
     def output(self, key, dataset=None, **fmt):
         """Path to write an output to; stops if it exists (unless --overwrite) and makes its folder.
