@@ -39,6 +39,7 @@ cartopy = ">=0.26.0,<0.27"
 cmocean = ">=4.0.3,<5"
 matplotlib = ">=3.11.2,<4"
 tqdm = ">=4.70.1,<5"
+pip = ">=26.2.2,<27"                # argopy runs `python -m pip list` at import
 
 [pypi-dependencies]
 argoclare = { path = ".", editable = true }
@@ -49,4 +50,3 @@ jupyterlab = ">=4.6.4,<5"
 sphinx = ">=9.2.0,<10"
 pre-commit = ">=4.7.0,<5"
 nbstripout = ">=0.9.1,<0.10"
-pip = ">=26.2.2,<27"
