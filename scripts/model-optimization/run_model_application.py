@@ -68,8 +68,10 @@ def parse_args():
                         help='Fold splits: whole floats/cruises (platform), whole profiles (profile), or '
                              'k-means regions (kmeans). Default: [regression] cv_type with --config, else platform')
     parser.add_argument('--scoring', default='median_abs_error', help='Tuning fold scoring error')
-    parser.add_argument('--n-workers', type=int, default=64)
-    parser.add_argument('--threads-per-worker', type=int, default=2)
+    parser.add_argument('--n-workers', type=int, default=None,
+                        help='Dask LocalCluster workers (default: chosen by dask from available CPUs)')
+    parser.add_argument('--threads-per-worker', type=int, default=None,
+                        help='Threads per dask worker (default: chosen by dask from available CPUs)')
     parser.add_argument('--data', default=None, help='Combined trainval csv (default: [files] reg_trainval with --config)')
     parser.add_argument('--sea-ice-clusters', type=int, nargs='+', default=None,
                         help='Clusters trained with sea_ice as a feature (from regression-input-prep.py)')

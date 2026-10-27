@@ -2,7 +2,7 @@
 Nested CV hyperparameter tuning for one algorithm + tuning grid.
 
 Batch version of dask-hyperparameter-tuning.ipynb. 
-64 workers x 2 threads by default.
+Dask chooses the number of workers and threads from the available CPUs unless --n-workers and --threads-per-worker are given.
 
 Usage (normally called by submit_nested_cv.sbatch):
     python run_dask_nested_cv.py RFR rfr_full

@@ -15,9 +15,13 @@ import matplotlib
 import matplotlib.pyplot     as plt  
 
 from argoclare import oceantools as myocn
-from crplot import figtools as mod_plot
 
-plt.rcParams.update(mod_plot.my_params(size=12))
+# crplot (plotting helpers) is in the conda environment only; the processing functions don't need it
+try:
+    from crplot import figtools as mod_plot
+    plt.rcParams.update(mod_plot.my_params(size=12))
+except ImportError:
+    mod_plot = None
 
 
 def tester():
@@ -839,6 +843,8 @@ def plot_TS_diagnostics(wmo_DF, figsize=(12,8), dot_small=2, dot_medium = 8, dot
         ax.set_title('Salinity Profiles')
 
     for ax in [ax6]:
+        if mod_plot is None:
+            raise ImportError('plot_TS_diagnostics needs crplot (in the conda environment, not pixi)')
         mod_plot.setup_TS_contours(wmo_DF, ax6, contour_font_size=10)
         ax.scatter(wmo_DF.SA, wmo_DF.CT, c='r', s=dot_small, alpha=0.5)
     
