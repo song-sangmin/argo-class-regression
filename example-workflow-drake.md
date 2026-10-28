@@ -71,7 +71,7 @@ git clone --depth 1 https://github.com/song-sangmin/argo-class-regression-data.g
 ```
 
 This puts the files in `example-data/` (ignored by git), where the example config's
-`bathy = "../example-data/example_drake_gebco_2026_sub_ice_n-55.0_s-65.0_w-70.0_e-50.0.nc"` points.
+`bathy = "./example-data/example_drake_gebco_2026_sub_ice_n-55.0_s-65.0_w-70.0_e-50.0.nc"` points.
 That subset covers only the example box, so a new region needs its own bathymetry.
 
 **For your own region and features**, download the files below. Put them where `[files]` says
@@ -154,6 +154,7 @@ Run these from `scripts/model-optimization/`; the optional argument `rfr_test` i
 cd scripts/model-optimization
 python run_dask_nested_cv.py RFR rfr_test --config ../../$C
 python run_model_application.py --config ../../$C
+cd ../..
 ```
 
 `--config` gives these scripts the data files, the results folder (`<run_dir>/model-optimization/<pcm>/`),

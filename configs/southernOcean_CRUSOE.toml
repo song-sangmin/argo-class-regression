@@ -172,7 +172,7 @@ run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/southernOcean_CRUSOE"
 
 [machines.nersc.files]
 reg_trainval = "{data_root}/combined_trainval_{pcm}.csv"
-reg_test = "{data_root}/combined_test_{pcm}.csv"
+reg_test = "{data_root}/combined_test_bgc_socat_glodap_{pcm}.csv"
 reg_application = "{data_root}/coreArgo_application_{pcm}.csv"
 reg_info = "{data_root}/regression_info_{pcm}.json"
 model_results = "/pscratch/sd/s/sangsong/argoclare_runs/results"
