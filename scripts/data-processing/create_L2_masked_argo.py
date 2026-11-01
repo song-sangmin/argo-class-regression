@@ -16,6 +16,7 @@ Usage:
     python create_L2_masked_argo.py --config ../../configs/example.toml --datasets core bgc
     python create_L2_masked_argo.py --config ../../configs/example.toml --datasets bgc --out-dir /tmp/test/
 """
+
 import os
 from datetime import datetime
 
@@ -26,15 +27,13 @@ import argoclare.oceantools as mod_ocean
 from argoclare import pipeline
 
 
-droplist = ['temperature_qc', 'salinity_qc', 'pressure_qc',
-            'temp_error', 'psal_error', 'pres_error']
+droplist = ['temperature_qc', 'salinity_qc', 'pressure_qc', 'temp_error', 'psal_error', 'pres_error']
 
 
 def first_by_profid(path, chunksize=5_000_000):
     """First non-null value of each column per profid, read in chunks (core L1 files are 2-5 GB).
     Same result as pd.read_csv(path, index_col=0).groupby('profid').first()."""
-    chunks = [chunk.groupby('profid').first()
-              for chunk in pd.read_csv(path, index_col=0, chunksize=chunksize)]
+    chunks = [chunk.groupby('profid').first() for chunk in pd.read_csv(path, index_col=0, chunksize=chunksize)]
     return pd.concat(chunks).groupby(level='profid').first()
 
 
@@ -46,8 +45,12 @@ def main():
     bathy_lim = run.section('L2')['bathy_lim']
 
     # Every input and output checked before any processing
-    jobs = [(dataset, yr, run.input('L1', dataset, yr=yr), run.output('L2', dataset, yr=yr))
-            for dataset in pipeline.datasets(args) for yr in run.years() if not run.skip(['L2'], dataset, yr=yr)]
+    jobs = [
+        (dataset, yr, run.input('L1', dataset, yr=yr), run.output('L2', dataset, yr=yr))
+        for dataset in pipeline.datasets(args)
+        for yr in run.years()
+        if not run.skip(['L2'], dataset, yr=yr)
+    ]
     if not jobs:
         return run.nothing_to_do()
     bathy_nc = xr.open_dataset(run.input('bathy')).elevation
@@ -56,12 +59,15 @@ def main():
         title = f'{label} profiles with valid QC data, masked to open ocean bathymetry where elevation < {bathy_lim:g}m'
         print(f'===> Processing {yr} {dataset}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
         plat_index = first_by_profid(l1_file)
-        INDEX = mod_ocean.get_bathymetry_DS(plat_index, bathy_nc=bathy_nc, dropvars=droplist,
-                                            bathy_lim=bathy_lim,
-                                            save_path=os.path.dirname(savefile) + os.sep,
-                                            save_tag=os.path.splitext(os.path.basename(savefile))[0],
-                                            nc_attrs={'title': title, 'bathy_file': os.path.basename(run.path('bathy')),
-                                                      **run.attrs()})
+        INDEX = mod_ocean.get_bathymetry_DS(
+            plat_index,
+            bathy_nc=bathy_nc,
+            dropvars=droplist,
+            bathy_lim=bathy_lim,
+            save_path=os.path.dirname(savefile) + os.sep,
+            save_tag=os.path.splitext(os.path.basename(savefile))[0],
+            nc_attrs={'title': title, 'bathy_file': os.path.basename(run.path('bathy')), **run.attrs()},
+        )
         print(f'  kept {INDEX.sizes["profid"]} of {len(plat_index)} profiles')
     run.finish()
 

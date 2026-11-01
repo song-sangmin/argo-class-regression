@@ -27,6 +27,7 @@ Usage:
     python apply_P2_classes.py --config ../../configs/southernOcean_CRUSOE.toml --datasets soccom socat core
     python apply_P2_classes.py --config ../../configs/southernOcean_CRUSOE.toml --datasets core --n-gmm 7   # another fit
 """
+
 import os
 from datetime import datetime
 
@@ -75,17 +76,23 @@ def classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, 
     datetag = datetime.now().strftime('%Y%m%d')
     years = df['datetime'].dt.year
     yrs = f'{years.min()}-{years.max()}' if years.max() > years.min() else str(years.min())
-    p2_classes.save_parquet(df, savefile, {
-        'title': f'P2 {dataset} dataset {yrs}: P1 samples with GMM class probabilities; '
-                 'samples without a class dropped.',
-        'pcm_params': meta.get('pcm_params', run.pcm),
-        'pcm_finder': os.path.basename(finder_file),
-        'class_numbering': meta.get('class_numbering', ''),
-        'gapfill': f'nearest classified {"sample of the same cruise" if ship else "profile of the same float"} '
-                   f'(<{days:g} d), before/after must agree',
-        'p1_input': os.path.basename(p1_file),
-        'counts': counts,
-        **run.attrs(), 'date': datetag})
+    p2_classes.save_parquet(
+        df,
+        savefile,
+        {
+            'title': f'P2 {dataset} dataset {yrs}: P1 samples with GMM class probabilities; '
+            'samples without a class dropped.',
+            'pcm_params': meta.get('pcm_params', run.pcm),
+            'pcm_finder': os.path.basename(finder_file),
+            'class_numbering': meta.get('class_numbering', ''),
+            'gapfill': f'nearest classified {"sample of the same cruise" if ship else "profile of the same float"} '
+            f'(<{days:g} d), before/after must agree',
+            'p1_input': os.path.basename(p1_file),
+            'counts': counts,
+            **run.attrs(),
+            'date': datetag,
+        },
+    )
     print(f'\n{len(df)} samples -> {savefile}\n{df["class_assign"].value_counts().sort_index().to_string()}\n')
     return counts
 
@@ -94,21 +101,30 @@ def main():
     parser = pipeline.add_pcm_args(pipeline.parser(__doc__))
     pipeline.add_datasets_arg(parser, choices=None, example='core bgc')
     pipeline.add_skip_arg(parser)
-    parser.add_argument('--float-days', type=float, default=None, help='Float gap-fill window (default: [P2] float_gapfill_days)')
-    parser.add_argument('--ship-days', type=float, default=None, help='Ship gap-fill window (default: [P2] ship_gapfill_days)')
+    parser.add_argument(
+        '--float-days', type=float, default=None, help='Float gap-fill window (default: [P2] float_gapfill_days)'
+    )
+    parser.add_argument(
+        '--ship-days', type=float, default=None, help='Ship gap-fill window (default: [P2] ship_gapfill_days)'
+    )
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
 
     # Every input and output checked before any processing
     finder_file = run.input('P2_finder')
-    jobs = [(dataset, run.input('P1', dataset), run.output('P2', dataset)) for dataset in pipeline.datasets(args)
-            if not run.skip(['P2'], dataset)]
+    jobs = [
+        (dataset, run.input('P1', dataset), run.output('P2', dataset))
+        for dataset in pipeline.datasets(args)
+        if not run.skip(['P2'], dataset)
+    ]
     if not jobs:
         return run.nothing_to_do()
 
     finder, prob_cols, meta = p2_classes.read_finder(finder_file)
-    counts = {dataset: classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, savefile)
-              for dataset, p1_file, savefile in jobs}
+    counts = {
+        dataset: classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, savefile)
+        for dataset, p1_file, savefile in jobs
+    }
     run.finish(counts=counts)
 
 

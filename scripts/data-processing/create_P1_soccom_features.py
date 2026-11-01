@@ -23,6 +23,7 @@ Usage:
     python create_P1_soccom_features.py --config ../../configs/southernOcean_CRUSOE.toml
     python create_P1_soccom_features.py --config ../../configs/southernOcean_CRUSOE.toml --years 2020 --max-samples 300 --out-dir /tmp/test/
 """
+
 import os
 from datetime import datetime, timedelta
 
@@ -51,7 +52,7 @@ def read_soccom_averages(path, depth, start, end, in_box):
             mat = sio.loadmat(os.path.join(path, f))
             wmo_df = pd.DataFrame(columns=[x[0][0] for x in mat['var_names']], data=mat['var'])
             wmo_df['wmoid'] = f[-11:-4]
-            wmo_df['id'] = wmo_df.index.values # row within the float's file
+            wmo_df['id'] = wmo_df.index.values  # row within the float's file
             parts.append(wmo_df)
     soccom_df = pd.concat(parts, ignore_index=True)
 
@@ -72,19 +73,35 @@ def match_profids(df, index_files, tolerance):
     floats = []
     for f in index_files:
         idx = xr.open_dataset(f)
-        floats.append(pd.DataFrame({'profid': idx.profid.values.astype(str),
-                                    'wmoid': idx.wmoid.values.astype(int),
-                                    'profid_datetime': pd.to_datetime(idx.datetime.values).astype('datetime64[ns]')}))
+        floats.append(
+            pd.DataFrame(
+                {
+                    'profid': idx.profid.values.astype(str),
+                    'wmoid': idx.wmoid.values.astype(int),
+                    'profid_datetime': pd.to_datetime(idx.datetime.values).astype('datetime64[ns]'),
+                }
+            )
+        )
     floats = pd.concat(floats).drop_duplicates('profid', keep='first').sort_values('profid_datetime')
 
-    samples = df[['wmoid', 'datetime']].assign(wmoid=df['wmoid'].astype(int), row=np.arange(len(df)),
-                                               datetime=df['datetime'].astype('datetime64[ns]'))
-    matched = pd.merge_asof(samples.sort_values('datetime'), floats,
-                            left_on='datetime', right_on='profid_datetime', by='wmoid',
-                            direction='nearest', tolerance=tolerance).set_index('row').sort_index()
+    samples = df[['wmoid', 'datetime']].assign(
+        wmoid=df['wmoid'].astype(int), row=np.arange(len(df)), datetime=df['datetime'].astype('datetime64[ns]')
+    )
+    matched = (
+        pd.merge_asof(
+            samples.sort_values('datetime'),
+            floats,
+            left_on='datetime',
+            right_on='profid_datetime',
+            by='wmoid',
+            direction='nearest',
+            tolerance=tolerance,
+        )
+        .set_index('row')
+        .sort_index()
+    )
     df['profid'] = matched['profid'].values
-    df['match_dt_minutes'] = ((matched['datetime'] - matched['profid_datetime']).abs()
-                              / pd.Timedelta(minutes=1)).values
+    df['match_dt_minutes'] = ((matched['datetime'] - matched['profid_datetime']).abs() / pd.Timedelta(minutes=1)).values
     return df
 
 
@@ -99,8 +116,9 @@ def main():
     parser = pipeline.parser(__doc__)
     parser.add_argument('--years', type=int, nargs='+', default=None, help='Default: [P1.soccom] or [run] years')
     parser.add_argument('--n-jobs', type=int, default=None, help='Years to process in parallel (default: [P1] n_jobs)')
-    parser.add_argument('--max-samples', type=int, default=None,
-                        help='Only use N random samples from each year (for testing)')
+    parser.add_argument(
+        '--max-samples', type=int, default=None, help='Only use N random samples from each year (for testing)'
+    )
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
     cfg, bgc_cfg = run.section('P1'), run.section('P1.soccom')
@@ -115,18 +133,20 @@ def main():
     soccom_df = soccom_df[soccom_df.datetime.dt.year.isin(years)]
     soccom_df = mod_prep.process_soccom_20m_averages(soccom_df, use_var=pco2_var)
     soccom_df = mod_ocean.set_longitude_range(soccom_df, end_type='180')
-    print(f'{len(soccom_df)} SOCCOM {depth} m samples from {soccom_df.wmoid.nunique()} floats, '
-          f'{soccom_df.datetime.min()} to {soccom_df.datetime.max()}')
+    print(
+        f'{len(soccom_df)} SOCCOM {depth} m samples from {soccom_df.wmoid.nunique()} floats, '
+        f'{soccom_df.datetime.min()} to {soccom_df.datetime.max()}'
+    )
 
     yearly = [(yr, df) for yr, df in soccom_df.groupby(soccom_df.datetime.dt.year)]
     if args.max_samples:
-        yearly = [(yr, df.sample(min(len(df), args.max_samples), random_state=0).sort_index())
-                  for yr, df in yearly]
-    print(f'Adding features to {sum(len(df) for _, df in yearly)} samples: ',
-          datetime.now().strftime('%Y%m%d %H:%M:%S'))
+        yearly = [(yr, df.sample(min(len(df), args.max_samples), random_state=0).sort_index()) for yr, df in yearly]
+    print(
+        f'Adding features to {sum(len(df) for _, df in yearly)} samples: ', datetime.now().strftime('%Y%m%d %H:%M:%S')
+    )
     parts = Parallel(n_jobs=args.n_jobs or cfg.get('n_jobs', 1))(
-        delayed(process_year)(df, yr, files, run.ref_time, cfg.get('seaice_days_before'))
-        for yr, df in yearly)
+        delayed(process_year)(df, yr, files, run.ref_time, cfg.get('seaice_days_before')) for yr, df in yearly
+    )
     bgcP1 = pd.concat(parts).sort_values(['wmoid', 'datetime']).reset_index(drop=True)
     bgcP1['delta_pco2'] = bgcP1['pco2_ocean'] - bgcP1['pco2_atmos']
     bgcP1['platform'] = 'bgcArgo'
@@ -135,23 +155,31 @@ def main():
     bgcP1 = match_profids(bgcP1, indexes, tolerance)
     n_matched = int(bgcP1.profid.notna().sum())
     n_shared = int(bgcP1.profid.dropna().duplicated(keep=False).sum())
-    print(f'Matched {n_matched} of {len(bgcP1)} samples to a profid within {match_hours:g} h '
-          f'({n_shared} samples share a profid with another sample)')
+    print(
+        f'Matched {n_matched} of {len(bgcP1)} samples to a profid within {match_hours:g} h '
+        f'({n_shared} samples share a profid with another sample)'
+    )
 
     datetag = datetime.now().strftime('%Y%m%d')
     first, last = bgcP1.datetime.dt.year.min(), bgcP1.datetime.dt.year.max()
     yrs = f'{first}-{last}' if last > first else str(first)
-    p1_features.save_netcdf(bgcP1, 'sample', savefile, {
-        'title': f'P1 BGC Argo dataset {yrs}: SOCCOM/GO-BGC {depth} m surface averages with '
-                 f'regression features; pco2_ocean = {pco2_var}. One row per sample, including '
-                 'samples without a matching float profile (profid = "").',
-        'pco2_ocean_variable': pco2_var,
-        'profid_match': f'nearest profile of the same WMO within {match_hours:g} h in: '
-                        + ', '.join(os.path.basename(f) for f in indexes),
-        'samples_matched': n_matched,
-        'source': soccom_dir,
-        **run.attrs(),
-        'date': datetag})
+    p1_features.save_netcdf(
+        bgcP1,
+        'sample',
+        savefile,
+        {
+            'title': f'P1 BGC Argo dataset {yrs}: SOCCOM/GO-BGC {depth} m surface averages with '
+            f'regression features; pco2_ocean = {pco2_var}. One row per sample, including '
+            'samples without a matching float profile (profid = "").',
+            'pco2_ocean_variable': pco2_var,
+            'profid_match': f'nearest profile of the same WMO within {match_hours:g} h in: '
+            + ', '.join(os.path.basename(f) for f in indexes),
+            'samples_matched': n_matched,
+            'source': soccom_dir,
+            **run.attrs(),
+            'date': datetag,
+        },
+    )
     print(f'Saved {len(bgcP1)} samples to {savefile}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
     run.finish(samples_matched=n_matched)
 

@@ -12,6 +12,7 @@ latitude steps), and writes [files] mbl. Rows shared between files (e.g. 2021.0)
 Usage:
     python create_mbl_co2_dataset.py --config ../../configs/example.toml
 """
+
 import os
 from datetime import datetime
 
@@ -51,20 +52,25 @@ def main():
     assert np.allclose(np.diff(df.index.values), 1 / 48, atol=1e-5), 'gap in the time steps'
 
     ds = xr.Dataset(
-        {var: (('decimalyr', 'sin_lat'), df.xs(var, axis=1, level=1)[sin_lat].values)
-         for var in ['mean', 'sdev']},
-        coords={'decimalyr': df.index.values, 'sin_lat': sin_lat,
-                'lat_deg': ('sin_lat', np.degrees(np.arcsin(sin_lat)))})
+        {var: (('decimalyr', 'sin_lat'), df.xs(var, axis=1, level=1)[sin_lat].values) for var in ['mean', 'sdev']},
+        coords={
+            'decimalyr': df.index.values,
+            'sin_lat': sin_lat,
+            'lat_deg': ('sin_lat', np.degrees(np.arcsin(sin_lat))),
+        },
+    )
     yrs = f'{int(df.index.min())} to {df.index.max():g}'
-    ds.attrs = {'description': f'NOAA Marine Boundary Layer CO2 data (surface), decimalyr {yrs}',
-                'units': 'ppm (X2019 scale); sdev is the uncertainty',
-                'source': 'https://gml.noaa.gov/ccgg/GHGreference/',
-                'citation': 'Lan, X., Tans, P., Thoning, K., & NOAA Global Monitoring Laboratory (2024). '
-                            'NOAA Greenhouse Gas Marine Boundary Layer Reference - CO2. '
-                            'https://doi.org/10.15138/DVNP-F961',
-                'files': ', '.join(os.path.basename(f) for f in files),
-                **run.attrs(),
-                'date_created': datetime.now().strftime('%Y-%m-%d')}
+    ds.attrs = {
+        'description': f'NOAA Marine Boundary Layer CO2 data (surface), decimalyr {yrs}',
+        'units': 'ppm (X2019 scale); sdev is the uncertainty',
+        'source': 'https://gml.noaa.gov/ccgg/GHGreference/',
+        'citation': 'Lan, X., Tans, P., Thoning, K., & NOAA Global Monitoring Laboratory (2024). '
+        'NOAA Greenhouse Gas Marine Boundary Layer Reference - CO2. '
+        'https://doi.org/10.15138/DVNP-F961',
+        'files': ', '.join(os.path.basename(f) for f in files),
+        **run.attrs(),
+        'date_created': datetime.now().strftime('%Y-%m-%d'),
+    }
     ds.to_netcdf(out)
     print(f'Saved {ds.sizes["decimalyr"]} time steps ({yrs}) x {ds.sizes["sin_lat"]} latitudes to {out}')
     run.finish()

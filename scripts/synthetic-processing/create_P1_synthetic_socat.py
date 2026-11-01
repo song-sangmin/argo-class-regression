@@ -22,6 +22,7 @@ netcdf along 'sample' (longitude -180 to 180; platform 'synSOCAT').
 Usage:
     python create_P1_synthetic_socat.py --config ../../configs/synthetic_CRUSOE.toml
 """
+
 import os
 import sys
 from datetime import datetime
@@ -35,10 +36,10 @@ from argoclare import pipeline
 import create_L3_synthetic_argo as l3syn
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data-processing'))
-import p1_features # noqa: E402
-import create_P1_socat_features as socat_p1 # noqa: E402
+import p1_features  # noqa: E402
+import create_P1_socat_features as socat_p1  # noqa: E402
 
-socat_levels = [0, 5, 10] # as 4.4
+socat_levels = [0, 5, 10]  # as 4.4
 surface_pressure = l3syn.surface_pressure
 
 
@@ -54,7 +55,7 @@ def read_synthetic_socat(path, ref_time=p1_features.ref_time):
     prof = prof.dropna(subset=['Temperature', 'Salinity', 'Depth', 'lat'])
     prof = prof[prof['sample_datetag'].isin(surf.index)].rename(columns={'lat': 'latitude', 'lon': 'longitude'})
     prof = l3syn.add_ct_sa(prof).assign(wmoid='socat').set_index('sample_datetag')
-    prof.index.name = 'profid' # regrid_pressure_levels groups by 'profid'
+    prof.index.name = 'profid'  # regrid_pressure_levels groups by 'profid'
     regular = l3syn.regrid_ct_sa(prof, socat_levels).reset_index()
     at5 = regular[regular['pressure'] == surface_pressure].set_index('profid')[['CT', 'SA']]
 
@@ -79,13 +80,17 @@ def main():
 
     df = read_synthetic_socat(args.socat, run.ref_time)
 
-    print(f'Finding clusterable synthetic profiles (CT and SA above {args.dbar_limit:g} dbar): ',
-          datetime.now().strftime('%Y%m%d %H:%M:%S'))
+    print(
+        f'Finding clusterable synthetic profiles (CT and SA above {args.dbar_limit:g} dbar): ',
+        datetime.now().strftime('%Y%m%d %H:%M:%S'),
+    )
     floats = socat_p1.clusterable_profiles(args.indexes, args.datas, args.dbar_limit, run.ref_time)
     df = socat_p1.find_nearest_float(df, floats, window_days=args.window_days, Lx=args.Lx, ref_time=run.ref_time)
     n_found = int((df.nearest_profid != '').sum())
-    print(f'Colocated {n_found} of {len(df)} samples within {args.window_days:g} days; '
-          f'median km_sep {df.km_sep.median():.0f} km')
+    print(
+        f'Colocated {n_found} of {len(df)} samples within {args.window_days:g} days; '
+        f'median km_sep {df.km_sep.median():.0f} km'
+    )
 
     df = p1_features.add_time_vars(df, run.ref_time)
     df = p1_features.add_solar_radiation(df)
@@ -96,14 +101,23 @@ def main():
     datetag = datetime.now().strftime('%Y%m%d')
     first, last = df.datetime.dt.year.min(), df.datetime.dt.year.max()
     yrs = f'{first}-{last}' if last > first else str(first)
-    p1_features.save_netcdf(df, 'sample', savefile, {
-        'title': f'P1 synthetic SOCAT dataset {yrs}: model (E3SM) surface variables at each SOCAT sample, '
-                 'CT/SA at 5 dbar, and the nearest clusterable synthetic profile (mld from that profile).',
-        'colocation': f'weighted distance sqrt(dlon^2/{args.Lx:g}^2 + dlat^2) within +-{args.window_days:g} '
-                      f'days, among synthetic profiles with CT and SA at all levels < {args.dbar_limit:g} dbar in: '
-                      + ', '.join(os.path.basename(f) for f in args.indexes),
-        'dbar_limit': args.dbar_limit, 'samples_colocated': n_found,
-        'source': os.path.basename(args.socat), **run.attrs(), 'date': datetag})
+    p1_features.save_netcdf(
+        df,
+        'sample',
+        savefile,
+        {
+            'title': f'P1 synthetic SOCAT dataset {yrs}: model (E3SM) surface variables at each SOCAT sample, '
+            'CT/SA at 5 dbar, and the nearest clusterable synthetic profile (mld from that profile).',
+            'colocation': f'weighted distance sqrt(dlon^2/{args.Lx:g}^2 + dlat^2) within +-{args.window_days:g} '
+            f'days, among synthetic profiles with CT and SA at all levels < {args.dbar_limit:g} dbar in: '
+            + ', '.join(os.path.basename(f) for f in args.indexes),
+            'dbar_limit': args.dbar_limit,
+            'samples_colocated': n_found,
+            'source': os.path.basename(args.socat),
+            **run.attrs(),
+            'date': datetag,
+        },
+    )
     print(f'Saved {len(df)} samples to {savefile}')
     run.finish(samples_colocated=n_found)
 

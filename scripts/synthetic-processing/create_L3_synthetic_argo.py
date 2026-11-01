@@ -27,6 +27,7 @@ Usage:
     python create_L3_synthetic_argo.py --config ../../configs/synthetic_CRUSOE.toml
     python create_L3_synthetic_argo.py --config ../../configs/synthetic_CRUSOE.toml --max-floats 20 --out-dir /tmp/test/
 """
+
 import os
 from datetime import datetime
 
@@ -40,13 +41,34 @@ import argoclare.argotools as mod_argo
 from argoclare import pipeline
 
 pres_regular = np.arange(0, 1001, 5).tolist() + np.arange(1050, 1951, 50).tolist()
-surface_pressure = 5 # dbar level used for the surface CT/SA in INDEX
+surface_pressure = 5  # dbar level used for the surface CT/SA in INDEX
 
-surface_vars = ['lat', 'lon', 'time', 'ifrac', 'MLD', 'atmPressure', 'windStressZonal', 'windStressMerid',
-                'CO2_gas_flux', 'pCO2surface', 'dpCO2', 'atmosphericCO2']
-rename = {'atmPressure': 'atmos_pres_Pa', 'dpCO2': 'delta_pco2', 'pCO2surface': 'pco2_ocean',
-          'lat': 'latitude', 'lon': 'longitude', 'ifrac': 'sea_ice', 'fnum': 'wmoid', 'MLD': 'mld',
-          'atmosphericCO2': 'pco2_atmos', 'time': 'datetime'}
+surface_vars = [
+    'lat',
+    'lon',
+    'time',
+    'ifrac',
+    'MLD',
+    'atmPressure',
+    'windStressZonal',
+    'windStressMerid',
+    'CO2_gas_flux',
+    'pCO2surface',
+    'dpCO2',
+    'atmosphericCO2',
+]
+rename = {
+    'atmPressure': 'atmos_pres_Pa',
+    'dpCO2': 'delta_pco2',
+    'pCO2surface': 'pco2_ocean',
+    'lat': 'latitude',
+    'lon': 'longitude',
+    'ifrac': 'sea_ice',
+    'fnum': 'wmoid',
+    'MLD': 'mld',
+    'atmosphericCO2': 'pco2_atmos',
+    'time': 'datetime',
+}
 
 
 def wind_speed_from_stress(tau, rho_air=1.2):
@@ -83,7 +105,9 @@ def process_surface(df):
 def add_ct_sa(df):
     """pressure from Depth; SA, CT from Salinity and Temperature (needs latitude, longitude)."""
     df['pressure'] = gsw.p_from_z(df['Depth'].values, df['latitude'].values)
-    df['SA'] = gsw.SA_from_SP(df['Salinity'].values, df['pressure'].values, df['longitude'].values, df['latitude'].values)
+    df['SA'] = gsw.SA_from_SP(
+        df['Salinity'].values, df['pressure'].values, df['longitude'].values, df['latitude'].values
+    )
     df['CT'] = gsw.CT_from_t(df['SA'].values, df['Temperature'].values, df['pressure'].values)
     return df
 
@@ -122,11 +146,12 @@ def build_dataset(name, ds, fnums, args):
     print(f'===> {name}: {len(fnums)} floats: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
     surf = surface_table(ds, fnums)
     print(f'  {len(surf)} profiles after QC (south of 35S, atmos pressure > 0.88 atm); regridding...')
-    chunks = [fnums[i:i + args.chunk_floats] for i in range(0, len(fnums), args.chunk_floats)]
+    chunks = [fnums[i : i + args.chunk_floats] for i in range(0, len(fnums), args.chunk_floats)]
     keep = {int(f): set(g.index) for f, g in surf.groupby('wmoid')}
     parts = Parallel(n_jobs=args.n_jobs)(
         delayed(grid_chunk)(args.merged, chunk, set().union(*[keep.get(int(f), set()) for f in chunk]))
-        for chunk in chunks)
+        for chunk in chunks
+    )
     regular = pd.concat([p for p in parts if p is not None])
 
     DATA = xr.Dataset.from_dataframe(regular).reindex(pressure=pres_regular)
@@ -144,9 +169,15 @@ def build_dataset(name, ds, fnums, args):
 
 def main():
     parser = pipeline.parser(__doc__)
-    parser.add_argument('--n-jobs', type=int, default=None, help='Parallel workers for regridding (default: [synthetic] n_jobs)')
-    parser.add_argument('--chunk-floats', type=int, default=None, help='Floats per regridding task (default: [synthetic] chunk_floats)')
-    parser.add_argument('--max-floats', type=int, default=None, help='Only use the first N floats of each set (testing)')
+    parser.add_argument(
+        '--n-jobs', type=int, default=None, help='Parallel workers for regridding (default: [synthetic] n_jobs)'
+    )
+    parser.add_argument(
+        '--chunk-floats', type=int, default=None, help='Floats per regridding task (default: [synthetic] chunk_floats)'
+    )
+    parser.add_argument(
+        '--max-floats', type=int, default=None, help='Only use the first N floats of each set (testing)'
+    )
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
     cfg = run.section('synthetic')
@@ -154,32 +185,49 @@ def main():
     args.chunk_floats = args.chunk_floats or cfg.get('chunk_floats', 25)
     args.merged = run.input('syn_merged')
     bgc_p1, core_p1 = run.input('real_P1_soccom'), run.input('real_P1_core')
-    outputs = {(name, kind): run.output(f'L3_{kind.lower()}', name) for name in ['bgc', 'core'] for kind in ['DATA', 'INDEX']}
+    outputs = {
+        (name, kind): run.output(f'L3_{kind.lower()}', name) for name in ['bgc', 'core'] for kind in ['DATA', 'INDEX']
+    }
 
     ds = xr.open_dataset(args.merged)
     bgc_w = set(pd.Series(xr.open_dataset(bgc_p1).wmoid.values).astype(int))
     core_w = set(xr.open_dataset(core_p1).wmoid.values.astype(int)) - bgc_w
     fnum = ds.fnum.values
     sets = {'bgc': fnum[np.isin(fnum, list(bgc_w))], 'core': fnum[np.isin(fnum, list(core_w))]}
-    print(f'{len(fnum)} synthetic floats: {len(sets["bgc"])} bgc, {len(sets["core"])} core, '
-          f'{len(fnum) - len(sets["bgc"]) - len(sets["core"])} matching neither (dropped)')
+    print(
+        f'{len(fnum)} synthetic floats: {len(sets["bgc"])} bgc, {len(sets["core"])} core, '
+        f'{len(fnum) - len(sets["bgc"]) - len(sets["core"])} matching neither (dropped)'
+    )
 
     datetag = datetime.now().strftime('%Y%m%d')
     for name, fnums in sets.items():
         if args.max_floats:
-            fnums = fnums[:args.max_floats]
+            fnums = fnums[: args.max_floats]
         DATA, INDEX = build_dataset(name, ds, fnums, args)
         years = pd.to_datetime(INDEX['datetime'].values).year
         yrs = f'{years.min()}-{years.max()}' if years.max() > years.min() else str(years.min())
-        attrs = {'source': f'E3SM synthetic Argo ({os.path.basename(args.merged)}), floats following '
-                           f'real {name} Argo WMOs', **run.attrs(), 'date': datetag,
-                 'qc': 'latitude < -35, atmos_pres_atm > 0.88; pCO2surface == 0 treated as missing'}
-        DATA = DATA.assign_attrs({**attrs, 'title': f'Synthetic {name} Argo profiles {yrs}, CT and SA regridded '
-                                  f'(pchip) to n={len(pres_regular)} pressure levels as the real L3',
-                                  'pressure_levels': 'Pressure levels in dbar: ' + str(pres_regular)})
-        INDEX = INDEX.assign_attrs({**attrs, 'title': f'Synthetic {name} Argo profiles {yrs}: CT/SA at 5 dbar, '
-                                    'CT/SA, model surface variables (sea_ice, mld, wind_speed, atmos_pres, '
-                                    'pco2_ocean, pco2_atmos, delta_pco2, CO2_gas_flux), time and position'})
+        attrs = {
+            'source': f'E3SM synthetic Argo ({os.path.basename(args.merged)}), floats following real {name} Argo WMOs',
+            **run.attrs(),
+            'date': datetag,
+            'qc': 'latitude < -35, atmos_pres_atm > 0.88; pCO2surface == 0 treated as missing',
+        }
+        DATA = DATA.assign_attrs(
+            {
+                **attrs,
+                'title': f'Synthetic {name} Argo profiles {yrs}, CT and SA regridded '
+                f'(pchip) to n={len(pres_regular)} pressure levels as the real L3',
+                'pressure_levels': 'Pressure levels in dbar: ' + str(pres_regular),
+            }
+        )
+        INDEX = INDEX.assign_attrs(
+            {
+                **attrs,
+                'title': f'Synthetic {name} Argo profiles {yrs}: CT/SA at 5 dbar, '
+                'CT/SA, model surface variables (sea_ice, mld, wind_speed, atmos_pres, '
+                'pco2_ocean, pco2_atmos, delta_pco2, CO2_gas_flux), time and position',
+            }
+        )
         for kind, dset in [('DATA', DATA), ('INDEX', INDEX)]:
             f = outputs[(name, kind)]
             dset.to_netcdf(f)

@@ -25,6 +25,7 @@ Usage:
     python create_P1_float_features.py --config ../../configs/example.toml --datasets core bgc
     python create_P1_float_features.py --config ../../configs/example.toml --datasets bgc --max-profiles 500 --out-dir /tmp/test/
 """
+
 import os
 from datetime import datetime
 
@@ -56,26 +57,32 @@ def make_dataset(run, cfg, dataset, years, index_file, files, savefile, args):
 
     yearly = [(yr, df) for yr, df in floatDF.groupby(floatDF.datetime.dt.year)]
     if args.max_profiles:
-        yearly = [(yr, df.sample(min(len(df), args.max_profiles), random_state=0).sort_index())
-                  for yr, df in yearly]
-    print(f'Adding features to {sum(len(df) for _, df in yearly)} profiles: ',
-          datetime.now().strftime('%Y%m%d %H:%M:%S'))
+        yearly = [(yr, df.sample(min(len(df), args.max_profiles), random_state=0).sort_index()) for yr, df in yearly]
+    print(
+        f'Adding features to {sum(len(df) for _, df in yearly)} profiles: ', datetime.now().strftime('%Y%m%d %H:%M:%S')
+    )
 
     parts = Parallel(n_jobs=args.n_jobs or cfg.get('n_jobs', 1))(
-        delayed(process_year)(df, yr, files, run.ref_time, cfg.get('seaice_days_before'))
-        for yr, df in yearly)
+        delayed(process_year)(df, yr, files, run.ref_time, cfg.get('seaice_days_before')) for yr, df in yearly
+    )
     floatP1 = pd.concat(parts).sort_values('datetime').reset_index(drop=True)
     floatP1['platform'] = platforms[dataset]
 
     datetag = datetime.now().strftime('%Y%m%d')
     yrs = f'{min(years)}-{max(years)}' if len(years) > 1 else str(years[0])
     label = 'core Argo application' if dataset == 'core' else 'BGC Argo float'
-    p1_features.save_netcdf(floatP1, 'profid', savefile, {
-        'title': f'P1 {label} dataset {yrs}: regression features at the surface '
-                 'location and time of each L3 profile (one row per profid).',
-        'source': os.path.basename(index_file),
-        **run.attrs(),
-        'date': datetag})
+    p1_features.save_netcdf(
+        floatP1,
+        'profid',
+        savefile,
+        {
+            'title': f'P1 {label} dataset {yrs}: regression features at the surface '
+            'location and time of each L3 profile (one row per profid).',
+            'source': os.path.basename(index_file),
+            **run.attrs(),
+            'date': datetag,
+        },
+    )
     print(f'Saved {len(floatP1)} profiles to {savefile}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
 
 
@@ -83,8 +90,9 @@ def main():
     parser = pipeline.add_skip_arg(pipeline.add_datasets_arg(pipeline.parser(__doc__)))
     parser.add_argument('--years', type=int, nargs='+', default=None, help='Default: [P1.<dataset>] or [run] years')
     parser.add_argument('--n-jobs', type=int, default=None, help='Years to process in parallel (default: [P1] n_jobs)')
-    parser.add_argument('--max-profiles', type=int, default=None,
-                        help='Only use N random profiles from each year (for testing)')
+    parser.add_argument(
+        '--max-profiles', type=int, default=None, help='Only use N random profiles from each year (for testing)'
+    )
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
     cfg = run.section('P1')
@@ -93,8 +101,15 @@ def main():
     jobs = []
     for dataset in [ds for ds in pipeline.datasets(args) if not run.skip(['P1'], ds)]:
         years = run.years(f'P1.{dataset}')
-        jobs.append((dataset, years, run.input('L3_index', dataset),
-                     p1_features.run_feature_files(run, years), run.output('P1', dataset)))
+        jobs.append(
+            (
+                dataset,
+                years,
+                run.input('L3_index', dataset),
+                p1_features.run_feature_files(run, years),
+                run.output('P1', dataset),
+            )
+        )
     if not jobs:
         return run.nothing_to_do()
     for job in jobs:

@@ -82,8 +82,9 @@ To see what exists for a clustering, from Python:
 
 ```python
 from argoclare import pipeline
+
 run = pipeline.load('configs/southernOcean_CRUSOE.toml', n_gmm=7)
-run.status()                                # every [files] entry for pc8_gmm7_dbar500, and whether it exists
+run.status()  # every [files] entry for pc8_gmm7_dbar500, and whether it exists
 finder = run.open('P2_finder')
 ```
 

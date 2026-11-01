@@ -62,8 +62,9 @@ In a notebook, `pipeline.load()` gives the same paths without writing anything:
 
 ```python
 from argoclare import pipeline
+
 run = pipeline.load('configs/southernOcean_CRUSOE.toml')
-run.status()                         # every [files] entry and whether it exists
+run.status()  # every [files] entry and whether it exists
 coreINDEX = run.open('L3_index', 'core')
 bgcL1 = run.open('L1', 'bgc', yr=2018)
 figpath = run.data_root + '/figures/'

@@ -9,6 +9,7 @@ Columns added to each sample:
     class_source   'matched' (the sample's own/nearest profile) or 'gapfill'
     class_dt_days  days between the sample and class_profid
 """
+
 import json
 import os
 
@@ -22,15 +23,18 @@ def read_finder(path):
         finder = pd.read_parquet(path)
         meta = dict(finder.attrs)
         finder = finder.set_index('profid')
-    else: # older csv PCM_finder, with the metadata in the matching PCM_fit json
+    else:  # older csv PCM_finder, with the metadata in the matching PCM_fit json
         finder = pd.read_csv(path, index_col='profid')
         meta_file = path.replace('PCM_finder_', 'PCM_fit_').replace('.csv', '.json')
         meta = json.load(open(meta_file)) if os.path.exists(meta_file) else {}
-    finder['datetime'] = pd.to_datetime(finder['datetime'], format='mixed') # nanosecond timestamps
-    prob_cols = sorted([c for c in finder.columns if c.startswith('class') and c.endswith('_prob')],
-                       key=lambda c: int(c[5:-5]))
-    print(f'PCM_finder: {len(finder)} classified profiles, {len(prob_cols)} classes '
-          f'({meta.get("pcm_params", os.path.basename(path))})')
+    finder['datetime'] = pd.to_datetime(finder['datetime'], format='mixed')  # nanosecond timestamps
+    prob_cols = sorted(
+        [c for c in finder.columns if c.startswith('class') and c.endswith('_prob')], key=lambda c: int(c[5:-5])
+    )
+    print(
+        f'PCM_finder: {len(finder)} classified profiles, {len(prob_cols)} classes '
+        f'({meta.get("pcm_params", os.path.basename(path))})'
+    )
     return finder, prob_cols, meta
 
 
@@ -44,8 +48,9 @@ def assign_from_profid(df, profid_col, finder, prob_cols):
     df['class_profid'] = df[profid_col].where(hit, '')
     df['class_source'] = np.where(hit, 'matched', '')
     df['class_dt_days'] = np.nan
-    df.loc[hit, 'class_dt_days'] = ((df.loc[hit, 'datetime'] - found['datetime'].values).abs()
-                                    / pd.Timedelta(days=1)).values
+    df.loc[hit, 'class_dt_days'] = (
+        (df.loc[hit, 'datetime'] - found['datetime'].values).abs() / pd.Timedelta(days=1)
+    ).values
     return df
 
 
@@ -66,8 +71,11 @@ def fill_from_neighbours(df, group_col, candidates, cand_group_col, max_days, pr
         dt = (g['datetime'] - t) / pd.Timedelta(days=1)
         before = dt[(dt <= 0) & (dt > -max_days)]
         after = dt[(dt > 0) & (dt < max_days)]
-        sides = [s for s in [before.index[-1:] if len(before) else None,
-                             after.index[:1] if len(after) else None] if s is not None]
+        sides = [
+            s
+            for s in [before.index[-1:] if len(before) else None, after.index[:1] if len(after) else None]
+            if s is not None
+        ]
         if not sides:
             continue
         picks = g.loc[np.concatenate(sides)]
@@ -95,14 +103,15 @@ def classify_float_samples(df, profid_col, finder, prob_cols, max_days):
     return df, (n_matched, n_filled)
 
 
-
 def drop_unclassified(df, label, n_matched, n_filled, how):
     """Drop samples without a class and print the counts."""
     n = len(df)
     df = df.dropna(subset=['class_assign']).copy()
     df['class_assign'] = df['class_assign'].astype(int)
-    print(f'{label}: {n} samples; {n_matched} classified from their profile, {n_filled} gap-filled {how}; '
-          f'dropped {n - len(df)} without a class')
+    print(
+        f'{label}: {n} samples; {n_matched} classified from their profile, {n_filled} gap-filled {how}; '
+        f'dropped {n - len(df)} without a class'
+    )
     return df
 
 

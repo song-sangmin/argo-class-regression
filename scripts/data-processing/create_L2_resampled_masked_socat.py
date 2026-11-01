@@ -18,6 +18,7 @@ Usage:
     python create_L2_resampled_masked_socat.py --config ../../configs/example.toml
     python create_L2_resampled_masked_socat.py --config ../../configs/example.toml --max-cruises 20 --out-dir /tmp/test/
 """
+
 import os
 from datetime import datetime
 
@@ -36,8 +37,11 @@ def read_socat(path, years, in_box, ref_time, max_cruises=None):
     df['expocode'] = df['expocode'].astype(str)
     if max_cruises:
         df = df[df.expocode.isin(df.expocode.unique()[:max_cruises])]
-    df['datetime'] = pd.to_datetime(df[['yr', 'mon', 'day', 'hh', 'mm', 'ss']].rename(columns={
-        'yr': 'year', 'mon': 'month', 'hh': 'hour', 'mm': 'minute', 'ss': 'second'}))
+    df['datetime'] = pd.to_datetime(
+        df[['yr', 'mon', 'day', 'hh', 'mm', 'ss']].rename(
+            columns={'yr': 'year', 'mon': 'month', 'hh': 'hour', 'mm': 'minute', 'ss': 'second'}
+        )
+    )
     df['yearday'] = (df['datetime'] - pd.Timestamp(ref_time)) / pd.Timedelta(days=1)
     return df
 
@@ -73,30 +77,40 @@ def main():
     print('Reading ' + raw_file + ': ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
     socat_df = read_socat(raw_file, years, run.in_box, run.ref_time, args.max_cruises)
     resampled = random_resample(socat_df, freq=freq, gap_hours=gap_hours, seed=seed)
-    print(f'{len(socat_df)} observations from {socat_df.expocode.nunique()} cruises; '
-          f'{len(resampled)} after resampling to one per {freq}')
+    print(
+        f'{len(socat_df)} observations from {socat_df.expocode.nunique()} cruises; '
+        f'{len(resampled)} after resampling to one per {freq}'
+    )
 
     yrs = f'{min(years)}-{max(years)}' if len(years) > 1 else str(years[0])
-    attrs = {'title': f'{cfg.get("version", "SOCAT")} data {yrs}, resampled to a random observation per '
-                      f'{freq} period. Masked to open ocean (elevation < {bathy_lim:g} m) and to the region '
-                      f'box {run.box} (lon_min, lon_max, lat_min, lat_max).',
-             'source': f'DOI: {cfg.get("doi", "")}',
-             'site': cfg.get('site', ''),
-             'notes': f'Resample frequency {freq}, gap time {gap_hours:g}h, random seed {seed}',
-             'raw_file': os.path.basename(raw_file),
-             'bathy_file': os.path.basename(bathy_file),
-             **run.attrs(),
-             'date_processed': datetime.now().strftime('%Y-%m-%d')}
-    socatINDEX = mod_ocean.get_bathymetry_DS(resampled.rename_axis('sample'),
-                                             bathy_nc=xr.open_dataset(bathy_file).elevation,
-                                             dropvars=[], bathy_lim=bathy_lim, nc_attrs=attrs)
+    attrs = {
+        'title': f'{cfg.get("version", "SOCAT")} data {yrs}, resampled to a random observation per '
+        f'{freq} period. Masked to open ocean (elevation < {bathy_lim:g} m) and to the region '
+        f'box {run.box} (lon_min, lon_max, lat_min, lat_max).',
+        'source': f'DOI: {cfg.get("doi", "")}',
+        'site': cfg.get('site', ''),
+        'notes': f'Resample frequency {freq}, gap time {gap_hours:g}h, random seed {seed}',
+        'raw_file': os.path.basename(raw_file),
+        'bathy_file': os.path.basename(bathy_file),
+        **run.attrs(),
+        'date_processed': datetime.now().strftime('%Y-%m-%d'),
+    }
+    socatINDEX = mod_ocean.get_bathymetry_DS(
+        resampled.rename_axis('sample'),
+        bathy_nc=xr.open_dataset(bathy_file).elevation,
+        dropvars=[],
+        bathy_lim=bathy_lim,
+        nc_attrs=attrs,
+    )
     socatINDEX = socatINDEX.set_coords(['datetime', 'latitude', 'longitude'])
-    socatINDEX['linear_time'] = socatINDEX['yearday'] # as in data_loader.import_socat_L2()
+    socatINDEX['linear_time'] = socatINDEX['yearday']  # as in data_loader.import_socat_L2()
     socatINDEX = socatINDEX.assign_coords(sample=np.arange(socatINDEX.sizes['sample']))
 
     socatINDEX.to_netcdf(savefile)
-    print(f'Kept {socatINDEX.sizes["sample"]} of {len(resampled)} samples in open ocean; saved to {savefile}: ',
-          datetime.now().strftime('%Y%m%d %H:%M:%S'))
+    print(
+        f'Kept {socatINDEX.sizes["sample"]} of {len(resampled)} samples in open ocean; saved to {savefile}: ',
+        datetime.now().strftime('%Y%m%d %H:%M:%S'),
+    )
     run.finish()
 
 

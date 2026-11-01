@@ -2,7 +2,7 @@
 Choose the best regression algorithm for each cluster from nested CV results.
 
 Reads the outercvErrors files written from submit_algorithm_comparison.sh,
-and chooses best algorithm as the one with the lowest raw RMSE. 
+and chooses best algorithm as the one with the lowest raw RMSE.
 
 Run on a login node once all runs from submit_algorithm_comparison.shhave finished:
     module load python; conda activate dask-cv
@@ -13,6 +13,7 @@ Outputs (in --outpath, default same as --savepath):
     <tag>_overallComparison.csv     overall weighted_pred errors, each run vs the combined best choice
     <tag>_bestAlgorithms.json       {cluster: [algorithm, grid]}, for run_model_application.py --cluster-models
 """
+
 import argparse
 import glob
 import json
@@ -25,7 +26,7 @@ import pandas as pd
 from argoclare import pipeline
 
 # ==== Standard run parameters =======
-n_clusters = 6 # SO classes
+n_clusters = 6  # SO classes
 var_predict = 'delta_pco2'
 
 # Folder the nested CV runs save results to
@@ -33,15 +34,15 @@ default_savepath = '/pscratch/sd/s/sangsong/argoclare_runs/results/'
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--tag', required=True,
-                        help='Comparison tag given to submit_algorithm_comparison.sh')
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--tag', required=True, help='Comparison tag given to submit_algorithm_comparison.sh')
     parser.add_argument('--algorithms', nargs='+', default=['RFR', 'ERT', 'XGB'])
-    parser.add_argument('--savepath', default=None,
-                        help='Folder with the outercvErrors files (default: [files] model_results with --config)')
-    parser.add_argument('--outpath', default=None,
-                        help='Folder to save comparison outputs (default: --savepath)')
+    parser.add_argument(
+        '--savepath',
+        default=None,
+        help='Folder with the outercvErrors files (default: [files] model_results with --config)',
+    )
+    parser.add_argument('--outpath', default=None, help='Folder to save comparison outputs (default: --savepath)')
     pipeline.add_model_args(parser)
     args = parser.parse_args()
     pipeline.fill_model_args(args)
@@ -50,14 +51,14 @@ def parse_args():
 
 
 def find_run_file(savepath, algorithm, tag):
-    """ Find the outercvErrors file for one algorithm, return (path, grid name).
-    If the run was saved more than once, use the latest acc date. """
+    """Find the outercvErrors file for one algorithm, return (path, grid name).
+    If the run was saved more than once, use the latest acc date."""
     pattern = re.compile(rf'^crusoe_{algorithm}_(.+)_{re.escape(tag)}_outercvErrors_acc(\d{{8}})\.csv$')
     matches = []
     for path in glob.glob(os.path.join(savepath, f'crusoe_{algorithm}_*_{tag}_outercvErrors_acc*.csv')):
         found = pattern.match(os.path.basename(path))
         if found:
-            matches.append((found.group(2), found.group(1), path)) # (datetag, grid, path)
+            matches.append((found.group(2), found.group(1), path))  # (datetag, grid, path)
 
     if not matches:
         return None, None
@@ -72,15 +73,17 @@ def find_run_file(savepath, algorithm, tag):
 
 
 def error_stats(error, suffix=''):
-    """ Summary statistics for an error series (prediction - truth) """
-    return {'n' + suffix: int(error.notna().sum()),
-            'rmse' + suffix: np.sqrt(np.mean(error**2)),
-            'mae' + suffix: np.mean(np.abs(error)),
-            'bias' + suffix: np.mean(error)}
+    """Summary statistics for an error series (prediction - truth)"""
+    return {
+        'n' + suffix: int(error.notna().sum()),
+        'rmse' + suffix: np.sqrt(np.mean(error**2)),
+        'mae' + suffix: np.mean(np.abs(error)),
+        'bias' + suffix: np.mean(error),
+    }
 
 
 def compare_clusters(run_data, run_grids):
-    """ Per-cluster errors of each cluster's own model on its own rows, for each algorithm """
+    """Per-cluster errors of each cluster's own model on its own rows, for each algorithm"""
     rows = []
     for classnum in range(1, n_clusters + 1):
         for algorithm, data in run_data.items():
@@ -89,8 +92,11 @@ def compare_clusters(run_data, run_grids):
             cal_error = class_data['cluster' + str(classnum) + '_calpred'] - class_data[var_predict]
             stats_cal = error_stats(cal_error, suffix='_cal')
             stats_cal.pop('n_cal')
-            rows.append({'cluster': classnum, 'algorithm': algorithm, 'grid': run_grids[algorithm]}
-                        | error_stats(raw_error) | stats_cal)
+            rows.append(
+                {'cluster': classnum, 'algorithm': algorithm, 'grid': run_grids[algorithm]}
+                | error_stats(raw_error)
+                | stats_cal
+            )
     comparison = pd.DataFrame(rows)
 
     # Best = lowest raw RMSE within each cluster
@@ -102,13 +108,15 @@ def compare_clusters(run_data, run_grids):
 
 
 def compare_overall(run_data, best_algorithms):
-    """ Overall weighted_pred and lincal_pred errors for each run and for the combined best choice.
+    """Overall weighted_pred and lincal_pred errors for each run and for the combined best choice.
     The combined prediction takes cluster{k}_pred from the best algorithm's run for each cluster.
-    Every prediction is out-of-fold, so this works even if runs used different folds. """
-    rows = [{'model': algorithm}
-            | error_stats(data['weighted_pred'] - data[var_predict])
-            | error_stats(data['lincal_pred'] - data[var_predict], suffix='_cal')
-            for algorithm, data in run_data.items()]
+    Every prediction is out-of-fold, so this works even if runs used different folds."""
+    rows = [
+        {'model': algorithm}
+        | error_stats(data['weighted_pred'] - data[var_predict])
+        | error_stats(data['lincal_pred'] - data[var_predict], suffix='_cal')
+        for algorithm, data in run_data.items()
+    ]
 
     # Rows must line up across runs to build the combined prediction
     indexes = [data.index for data in run_data.values()]
@@ -119,9 +127,11 @@ def compare_overall(run_data, best_algorithms):
     for index in indexes[1:]:
         common_index = common_index.intersection(index)
     if any(len(index) != len(common_index) for index in indexes):
-        print(f'Warning: runs have different rows, using the {len(common_index)} rows they share for the combined check')
+        print(
+            f'Warning: runs have different rows, using the {len(common_index)} rows they share for the combined check'
+        )
 
-    reference = next(iter(run_data.values())).loc[common_index] # target and cluster probs are the same in every run
+    reference = next(iter(run_data.values())).loc[common_index]  # target and cluster probs are the same in every run
     combined_pred = pd.Series(0.0, index=common_index)
     combined_calpred = pd.Series(0.0, index=common_index)
     for classnum, algorithm in best_algorithms.items():
@@ -130,9 +140,11 @@ def compare_overall(run_data, best_algorithms):
         combined_pred += prob * data['cluster' + str(classnum) + '_pred']
         combined_calpred += prob * data['cluster' + str(classnum) + '_calpred']
 
-    rows.append({'model': 'combined_best'}
-                | error_stats(combined_pred - reference[var_predict])
-                | error_stats(combined_calpred - reference[var_predict], suffix='_cal'))
+    rows.append(
+        {'model': 'combined_best'}
+        | error_stats(combined_pred - reference[var_predict])
+        | error_stats(combined_calpred - reference[var_predict], suffix='_cal')
+    )
     return pd.DataFrame(rows)
 
 
@@ -150,8 +162,10 @@ def main():
         else:
             run_files[algorithm], run_grids[algorithm] = path, grid
     if missing:
-        raise FileNotFoundError(f'No outercvErrors file in {args.savepath} for: {", ".join(missing)}. '
-                                'Check the jobs finished (sacct) before comparing.')
+        raise FileNotFoundError(
+            f'No outercvErrors file in {args.savepath} for: {", ".join(missing)}. '
+            'Check the jobs finished (sacct) before comparing.'
+        )
 
     run_data = {}
     for algorithm, path in run_files.items():
@@ -174,21 +188,24 @@ def main():
     best_cal = comparison[comparison['best_by_cal']].set_index('cluster')['algorithm']
     for classnum, algorithm in best_algorithms.items():
         if best_cal[classnum] != algorithm:
-            print(f'Warning: cluster {classnum} would pick {best_cal[classnum]} by calibrated RMSE instead of {algorithm}')
+            print(
+                f'Warning: cluster {classnum} would pick {best_cal[classnum]} by calibrated RMSE instead of {algorithm}'
+            )
 
-    savefiles = {'per-cluster comparison': os.path.join(outpath, args.tag + '_algorithmComparison.csv'),
-                 'overall comparison': os.path.join(outpath, args.tag + '_overallComparison.csv'),
-                 'best algorithms': os.path.join(outpath, args.tag + '_bestAlgorithms.json')}
+    savefiles = {
+        'per-cluster comparison': os.path.join(outpath, args.tag + '_algorithmComparison.csv'),
+        'overall comparison': os.path.join(outpath, args.tag + '_overallComparison.csv'),
+        'best algorithms': os.path.join(outpath, args.tag + '_bestAlgorithms.json'),
+    }
     comparison.to_csv(savefiles['per-cluster comparison'], index=False)
     overall.to_csv(savefiles['overall comparison'], index=False)
     with open(savefiles['best algorithms'], 'w') as file:
-        json.dump({str(classnum): [row['algorithm'], row['grid']] for classnum, row in best.iterrows()},
-                  file, indent=2)
+        json.dump({str(classnum): [row['algorithm'], row['grid']] for classnum, row in best.iterrows()}, file, indent=2)
 
     print()
     for label, savefile in savefiles.items():
         print('Saved ' + label + ' to ' + savefile)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

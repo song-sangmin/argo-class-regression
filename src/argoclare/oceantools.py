@@ -1,8 +1,8 @@
 import os.path
-import numpy                 as np
-import pandas                as pd
-import xarray                as xr
-from   datetime              import date, datetime, timedelta                 # for saving figures with today's date
+import numpy as np
+import pandas as pd
+import xarray as xr
+from datetime import date, datetime, timedelta  # for saving figures with today's date
 import datetime
 import scipy
 import gsw
@@ -10,38 +10,41 @@ from tqdm import tqdm
 
 # %% Time functions
 
+
 def datetime2ytd(time, ref_time):
-    """" Return time in YTD format from datetime format."""
-    return (time - np.datetime64(ref_time))/np.timedelta64(1, 'D')
+    """ " Return time in YTD format from datetime format."""
+    return (time - np.datetime64(ref_time)) / np.timedelta64(1, 'D')
+
 
 def ytd2datetime(num, ref_time):
-    """" Return datetime format to YTD.
+    """ " Return datetime format to YTD.
     @ param num: (int) number of days since ref_time
       ref_time: (str) reference time in 'YYYY-MM-DD' format
     """
-    return (num * np.timedelta64(1,'D')) + np.datetime64(ref_time)
+    return (num * np.timedelta64(1, 'D')) + np.datetime64(ref_time)
+
 
 def add_decimalyr(df):
-    """ for colocating atmospheric pco2 from MBL"""
+    """for colocating atmospheric pco2 from MBL"""
     df = df.copy()
-    df['datetime'] = df['datetime'].astype('datetime64[ns]') # pd.to_datetime(df['datetime'])
-    df['decimalyr'] = (
-        df['datetime'].dt.year +
-        (df['datetime'].dt.dayofyear - 1) /
-        (df['datetime'].dt.is_leap_year.replace({True: 366, False: 365}))
+    df['datetime'] = df['datetime'].astype('datetime64[ns]')  # pd.to_datetime(df['datetime'])
+    df['decimalyr'] = df['datetime'].dt.year + (df['datetime'].dt.dayofyear - 1) / (
+        df['datetime'].dt.is_leap_year.replace({True: 366, False: 365})
     )
     return df
 
+
 def get_ydsines(yearday):
-    """ For adding seasonal variable in Training_RandomForest.ipynb"""
-    yearday = yearday%365.25
-    ydcos = np.cos(2*np.pi*np.array(yearday)/365.25)
-    ydsin = np.sin(2*np.pi*np.array(yearday)/365.25)
+    """For adding seasonal variable in Training_RandomForest.ipynb"""
+    yearday = yearday % 365.25
+    ydcos = np.cos(2 * np.pi * np.array(yearday) / 365.25)
+    ydsin = np.sin(2 * np.pi * np.array(yearday) / 365.25)
 
     return [ydcos, ydsin]
 
+
 def expand_datetime(data, type='dataframe'):
-    """ Choose "dataframe" or "dataset" type to expand datetime into year, month, day"""
+    """Choose "dataframe" or "dataset" type to expand datetime into year, month, day"""
     out = data.copy()
     if type == 'dataframe':
         out['year'] = data.datetime.astype('datetime64[ns]').map(lambda x: x.year)
@@ -57,24 +60,26 @@ def expand_datetime(data, type='dataframe'):
 
 # %% Spatial functions (from 0.1_SOCAT)
 
-def set_longitude_range(df, end_type = '360'):
-    """ Switch from 0-360 to -180,180 range"""
+
+def set_longitude_range(df, end_type='360'):
+    """Switch from 0-360 to -180,180 range"""
     df = df.copy()
     if end_type == '180':
         # inds = df['longitude']<180
         # df.loc[inds, 'longitude'] = df.loc[inds, 'longitude'].apply(lambda x: x+360)
-        
-        inds = df['longitude']>180
-        df.loc[inds, 'longitude'] = df.loc[inds, 'longitude'].apply(lambda x: x-360)
+
+        inds = df['longitude'] > 180
+        df.loc[inds, 'longitude'] = df.loc[inds, 'longitude'].apply(lambda x: x - 360)
     elif end_type == '360':
-        inds = df['longitude']<0
-        df.loc[inds, 'longitude'] = df.loc[inds, 'longitude'].apply(lambda x: x+360)
+        inds = df['longitude'] < 0
+        df.loc[inds, 'longitude'] = df.loc[inds, 'longitude'].apply(lambda x: x + 360)
     return df
 
+
 def weighted_distance(lon_arr, lat_arr, Lx, Ly):
-    """  used in Diagnostic_SOCAT
+    """used in Diagnostic_SOCAT
     @param:
-        Calculate a distance metric that incorporates ratio of decorrelation scales  
+        Calculate a distance metric that incorporates ratio of decorrelation scales
                 (zonal Lx, meridional Ly)
         lon_arr: [lon1, lon2]
         lat_arr: [lat1, lat2]
@@ -84,21 +89,23 @@ def weighted_distance(lon_arr, lat_arr, Lx, Ly):
         delta_lon = 360 - np.abs(delta_lon)
     delta_lat = lat_arr[1] - lat_arr[0]
 
-    return np.sqrt( (delta_lon**2 /Lx**2) + (delta_lat**2 / Ly**2) )
+    return np.sqrt((delta_lon**2 / Lx**2) + (delta_lat**2 / Ly**2))
+
 
 def did_cross_lon180(df):
-    """ 
+    """
     Returns True if the platform crossed the 180 longitude line,
     i.e. when the longitude delta is large (> 270 degrees)"""
     df = df.copy()
-    df.loc[:,'longitude_diff'] = df['longitude'].diff().values
+    df.loc[:, 'longitude_diff'] = df['longitude'].diff().values
     return (np.abs(df['longitude_diff']) > 270).any()
 
+
 def get_avg_longitude(df, type='mean'):
-    """ 
+    """
     Function to fix longitude averaging when crossing longitude 180 to -180
     @param df: dataframe with longitude values
-    @return longitude_avg: (float) average longitude value 
+    @return longitude_avg: (float) average longitude value
     """
     # If any longitude differences are large,
     # Then add 360 to all the negative values of longitude
@@ -112,53 +119,56 @@ def get_avg_longitude(df, type='mean'):
     elif type == 'median':
         longitude_avg = df['longitude'].median()
 
-    # If the average longitude is greater than 180, 
+    # If the average longitude is greater than 180,
     # then subtract 360 (full revolution)
     if longitude_avg > 180:
         longitude_avg = longitude_avg - 360
 
-    return longitude_avg 
+    return longitude_avg
+
 
 # %% Bathymetry
 
-# bathy_path = '/Volumes/cremas-repo/data/etopo/gebco_2024_sub_ice_topo/GEBCO_2024_sub_ice_topo.nc'
-def get_bathymetry_DS(plat_index, bathy_nc, dropvars = [], bathy_lim = -1000,
-                   save_path = None, save_tag = '', nc_attrs = {'title': ''}):
-    """ 
-    Find nearest bathymetry value for each float profile. 
-    Return Dataset with open ocean profile index (averaged along pressure). 
 
-    @param 
+# bathy_path = '/Volumes/cremas-repo/data/etopo/gebco_2024_sub_ice_topo/GEBCO_2024_sub_ice_topo.nc'
+def get_bathymetry_DS(
+    plat_index, bathy_nc, dropvars=[], bathy_lim=-1000, save_path=None, save_tag='', nc_attrs={'title': ''}
+):
+    """
+    Find nearest bathymetry value for each float profile.
+    Return Dataset with open ocean profile index (averaged along pressure).
+
+    @param
         plat_index: dataframe with 'latitude' and 'longitude' columns,
                 index should be 'profid' (should be pre-averaged along pressure)
                 [if not averaged, use `plat_DF.groupby('expoID').first()` during call]
         drop_vars: variables to drop when making final .nc file
-                  for floats, dropvars = ['temperature_qc', 'salinity_qc', 'pressure_qc', 
+                  for floats, dropvars = ['temperature_qc', 'salinity_qc', 'pressure_qc',
                                          'temp_error', 'psal_error', 'pres_error']
-        bathy_lim: (negative) limit for shallow profiles 
+        bathy_lim: (negative) limit for shallow profiles
         bathy_nc : bathymetry Dataset
         save_path: path to save new dataframe, None by default means no save
     """
     print('Masking with bathymetry limit ' + str(bathy_lim))
     print('* Note long run time for large datasets *')
 
-    # bathy_nc = xr.open_dataset(bathy_path).elevation    
+    # bathy_nc = xr.open_dataset(bathy_path).elevation
     # plat_index = plat_df.groupby('profid').first()
     plat_index['bathymetry'] = bathy_nc.sel(
-            lat=xr.DataArray(plat_index['latitude']), 
-            lon=xr.DataArray(plat_index['longitude']), 
-            method='nearest').values
-    
+        lat=xr.DataArray(plat_index['latitude']), lon=xr.DataArray(plat_index['longitude']), method='nearest'
+    ).values
+
     # Make xr Dataset to store profile-averaged core index by year
-    INDEX_DS = (xr.Dataset.from_dataframe(plat_index[plat_index.bathymetry < bathy_lim])
-                                                        .drop_vars(dropvars)
-                                                        .assign_attrs(nc_attrs))
+    INDEX_DS = (
+        xr.Dataset.from_dataframe(plat_index[plat_index.bathymetry < bathy_lim])
+        .drop_vars(dropvars)
+        .assign_attrs(nc_attrs)
+    )
     if save_path != None:
         INDEX_DS.to_netcdf(save_path + save_tag + '.nc')
         print('Saved to ' + save_path + save_tag + '.nc' + '\n')
 
     return INDEX_DS
-
 
 
 # %% Calculated variables
@@ -167,7 +177,7 @@ def get_bathymetry_DS(plat_index, bathy_nc, dropvars = [], bathy_lim = -1000,
 #     """ Originally from 2.0_process_pco2_data
 # moved to mod_argo
 #     """
-#     # Calculate mixed layer pressure 
+#     # Calculate mixed layer pressure
 #     plat_mlps, no_data = mod_argo.calc_mlp(platDS, threshold=0.03)
 #     plat_mlps['mld'] = gsw.z_from_p(plat_mlps.mlp.values, platINDEX.sel(profid=plat_mlps.index).latitude.values)
 
@@ -185,42 +195,44 @@ def get_bathymetry_DS(plat_index, bathy_nc, dropvars = [], bathy_lim = -1000,
 
 def add_Pchip_buoyancy(plat_DF):
     """
-    Calculate buoyancy (actually Nsquared using gsw) 
-    @param      plat_DF: dataframe with profiles 
+    Calculate buoyancy (actually Nsquared using gsw)
+    @param      plat_DF: dataframe with profiles
                 ---> make new variable: profiles (list): list of dataframes, each dataframe is a profile
-    @return     list of dataframes, each dataframe is a profile with a buoyancy column added    
-    
+    @return     list of dataframes, each dataframe is a profile with a buoyancy column added
+
     Version 09.06.2023
     """
     new_DF = pd.DataFrame()
 
-    profids = pd.unique(plat_DF.profid) # list of profile ids
+    profids = pd.unique(plat_DF.profid)  # list of profile ids
     profile_DFs = []
     for i in range(len(profids)):
         profile_DFs.append(plat_DF[plat_DF['profid'] == profids[i]].copy())
 
     for profile in profile_DFs:
-        Nsquared, mid_pres = gsw.Nsquared(profile.SA.values, profile.CT.values, 
-                                            profile.pressure.values, profile.lat.values)
+        Nsquared, mid_pres = gsw.Nsquared(
+            profile.SA.values, profile.CT.values, profile.pressure.values, profile.lat.values
+        )
 
-        df = pd.DataFrame.from_dict({"Ns": Nsquared, "mp": mid_pres})
+        df = pd.DataFrame.from_dict({'Ns': Nsquared, 'mp': mid_pres})
         df = df.dropna()
 
         if np.isnan(df.mp).all():
-            nans = np.empty(len(profile['P'])); nans[:] = np.NaN
+            nans = np.empty(len(profile['P']))
+            nans[:] = np.NaN
             profile.loc[:, 'buoyancy'] = nans
         else:
-            f = scipy.interpolate.PchipInterpolator(x=df.mp, y=df.Ns, extrapolate = False)
-            vertN2 = f(profile["pressure"].values)
+            f = scipy.interpolate.PchipInterpolator(x=df.mp, y=df.Ns, extrapolate=False)
+            vertN2 = f(profile['pressure'].values)
 
             surf = np.where(~np.isnan(profile.SA.values))[0][0]
             bottom = np.where(~np.isnan(profile.SA.values))[0][-1]
-            vertN2[surf] = vertN2[surf+1]
-            vertN2[bottom] = vertN2[bottom-1]
+            vertN2[surf] = vertN2[surf + 1]
+            vertN2[bottom] = vertN2[bottom - 1]
             profile.loc[:, 'buoyancy'] = vertN2
-        
-        # Take vert N2 and find the maximum in the profile. 
-        
+
+        # Take vert N2 and find the maximum in the profile.
+
         new_DF = pd.concat([new_DF, profile])
 
     return new_DF
@@ -228,27 +240,30 @@ def add_Pchip_buoyancy(plat_DF):
 
 # %% Isopycnal functions for profiler data (float or glider)
 
+
 def list_profile_DFs(df):
-    """ 
+    """
     @param df: dataframe with all profiles
     @return: list of dataframes, each with a unique profile
     """
     profids = pd.unique(df.profid)
     profile_DFs = []
     for i in range(len(profids)):
-        profile_DFs.append(df[df['profid']==profids[i]].copy())
+        profile_DFs.append(df[df['profid'] == profids[i]].copy())
     return profile_DFs
 
 
-def get_isopycnal_signal(platDF, ave_isopycnal, var_thresh=0.01, var_list = ['yearday', 'pressure', 'sigma0', 'nitrate', 'spice']):
-    """ 
+def get_isopycnal_signal(
+    platDF, ave_isopycnal, var_thresh=0.01, var_list=['yearday', 'pressure', 'sigma0', 'nitrate', 'spice']
+):
+    """
     Originally from RandomForest_SG mod_DFproc.py
 
-    @param: prof_list: list of glider DF's, using list_profile_DFs 
+    @param: prof_list: list of glider DF's, using list_profile_DFs
             ave_isopycnal: list of isopycnal values to find in each profile
             var_thresh: threshold for finding sigma in each profile
             var_list: which variables to keep track of
-    @return: Dictionary object containing along-isopycnal variables. 
+    @return: Dictionary object containing along-isopycnal variables.
     """
     prof_list = list_profile_DFs(platDF)
     dLine = dict.fromkeys(ave_isopycnal)
@@ -258,23 +273,23 @@ def get_isopycnal_signal(platDF, ave_isopycnal, var_thresh=0.01, var_list = ['ye
 
         for prof in prof_list:
             # Find all sigma points that are within that threshold
-            rangeDF = pd.DataFrame() 
-            rangeDF = prof[(prof['sigma0']< (sig+var_thresh)) & (prof['sigma0'] > (sig-var_thresh))].copy()
+            rangeDF = pd.DataFrame()
+            rangeDF = prof[(prof['sigma0'] < (sig + var_thresh)) & (prof['sigma0'] > (sig - var_thresh))].copy()
 
             # Choose mean of values
             rowdat = rangeDF[var_list].copy().dropna()
-            rowdat = np.mean(rowdat, axis=0) #nanmean avoided if you drop nans above.
+            rowdat = np.mean(rowdat, axis=0)  # nanmean avoided if you drop nans above.
             temp = pd.concat([temp, rowdat], axis=1)
-            
+
         temp = temp.T
         dLine[sig] = temp
 
     return dLine
 
 
-# %% T-S diagrams and binning functions 
+# %% T-S diagrams and binning functions
 def setup_TS_contours(df, ax=None):
-    """  
+    """
     For plotting; add T-S contours to a given axis.
     @param: df: dataframe with 'CT' and 'SA' as columns
 
@@ -284,34 +299,34 @@ def setup_TS_contours(df, ax=None):
     """
 
     if ax == None:
-        fig = plt.figure(figsize=(9,7))
+        fig = plt.figure(figsize=(9, 7))
         ax = fig.gca()
 
     # Add density contours
     # Figure out boudaries (mins and maxs)
-    smin = df.SA.min() -.2
-    smax = df.SA.max() +.2
+    smin = df.SA.min() - 0.2
+    smax = df.SA.max() + 0.2
 
-    tmin= df.CT.min() - 1.2
+    tmin = df.CT.min() - 1.2
     tmax = df.CT.max() + 0.5
 
     # Calculate how many gridcells we need in the x and y dimensions
-    xdim = int(round((smax-smin)/0.1+1,0))
-    ydim = int(round((tmax-tmin)+1,0))
-    
+    xdim = int(round((smax - smin) / 0.1 + 1, 0))
+    ydim = int(round((tmax - tmin) + 1, 0))
+
     # Create empty grid of zeros
-    dens = np.zeros((ydim,xdim))
-    
+    dens = np.zeros((ydim, xdim))
+
     # Create temp and salt vectors of appropiate dimensions
-    ti = np.linspace(1,ydim-1,ydim)+tmin
-    si = np.linspace(1,xdim-1,xdim)*0.1+smin
+    ti = np.linspace(1, ydim - 1, ydim) + tmin
+    si = np.linspace(1, xdim - 1, xdim) * 0.1 + smin
 
     # Loop to fill in grid with densities
-    for j in range(0,int(ydim)):
+    for j in range(0, int(ydim)):
         for i in range(0, int(xdim)):
-            dens[j,i]=gsw.sigma0(si[i],ti[j])
+            dens[j, i] = gsw.sigma0(si[i], ti[j])
 
-    CS = ax.contour(si,ti,dens, linestyles='dashed', colors='k', alpha=0.4, zorder=1)
+    CS = ax.contour(si, ti, dens, linestyles='dashed', colors='k', alpha=0.4, zorder=1)
     ax.clabel(CS, fmt='%1.2f')
     ax.set_xlabel('SA')
     ax.set_ylabel('CT')
@@ -320,16 +335,17 @@ def setup_TS_contours(df, ax=None):
 
 
 def TSbin(df, nbins):
-    """ 
+    """
     Used in coords_TSbin function
     """
     nobs, bin_temp = np.histogram(df.CT, nbins)
-    nobs, bin_sal = np.histogram(df.SA, nbins)   
+    nobs, bin_sal = np.histogram(df.SA, nbins)
     return [bin_temp, bin_sal]
 
-def coords_TSbin(df, nbins): 
-    """ Manually give bin coordinates to each obs. row in the dataframe
-    Allows you to plot more complex quantities in T-S space. 
+
+def coords_TSbin(df, nbins):
+    """Manually give bin coordinates to each obs. row in the dataframe
+    Allows you to plot more complex quantities in T-S space.
     """
 
     [bin_temp, bin_sal] = TSbin(df, nbins)
@@ -339,31 +355,31 @@ def coords_TSbin(df, nbins):
 
     df = df.sort_values(by='CT')
     dfind = []  # find index limits where observations fall into each bin
-    for i in range(len(bin_temp)): 
+    for i in range(len(bin_temp)):
         dfind.append(np.searchsorted(df.CT, bin_temp[i], side='right'))
-    for i in range(len(bin_temp)-1):  # notice -1 = nbins
-        coordT[dfind[i]:dfind[i+1]] = i
+    for i in range(len(bin_temp) - 1):  # notice -1 = nbins
+        coordT[dfind[i] : dfind[i + 1]] = i
     df['y_temp'] = coordT.astype(int)
-
 
     df = df.sort_values(by='SA')
     dfind = []
     for i in range(len(bin_sal)):
         dfind.append(np.searchsorted(df.SA, bin_sal[i], side='right'))
-    for i in range(len(bin_sal)-1): 
-        coordS[dfind[i]:dfind[i+1]] = i
+    for i in range(len(bin_sal) - 1):
+        coordS[dfind[i] : dfind[i + 1]] = i
     df['x_sal'] = coordS.astype(int)
 
     df = df.sort_values(by=['profid', 'pressure'])
     return df
 
+
 def array_TSbin(df, nbins, var='oxygen', stat='count'):
-    """" Calculates value for the TS-binned array.
+    """ " Calculates value for the TS-binned array.
     Note that coordT will be stored as "y_temp" and corresponds to row in the array."""
-    arr = [ [np.NaN for i in range(nbins)] for j in range(nbins) ]
+    arr = [[np.NaN for i in range(nbins)] for j in range(nbins)]
     for r in range(nbins):
         for c in range(nbins):
-            subdf = df[(df['x_sal']==c) & (df['y_temp']==r)]
+            subdf = df[(df['x_sal'] == c) & (df['y_temp'] == r)]
 
             if stat == 'mean':
                 arr[r][c] = np.nanmean(subdf[var])
@@ -371,14 +387,16 @@ def array_TSbin(df, nbins, var='oxygen', stat='count'):
                 arr[r][c] = np.var(subdf[var])
             elif stat == 'count':
                 arr[r][c] = len(subdf[var])
-            # change line here 
+            # change line here
 
     return arr
 
+
 # %% wind speed
 
-def wind_speed(windstress,rho_air=1.2):
-    '''
+
+def wind_speed(windstress, rho_air=1.2):
+    """
     Wind speed calculation from wind stress, using the formula:
     tau = rho_air * C_d * (w_speed)^2 where C_d = a/w_speed + b + c*w_speed
 
@@ -387,36 +405,35 @@ def wind_speed(windstress,rho_air=1.2):
     where coefficients a, b, and c are based on Large & Yeager (2004)
     -----------------------------------------------------------------
     Input
-     - windstress: single value of total wind stress 
+     - windstress: single value of total wind stress
      - rho_air: density of air, default = 1.2
-    '''
-    if np.sum(windstress)==0 or np.isnan(windstress):
+    """
+    if np.sum(windstress) == 0 or np.isnan(windstress):
         speed = np.array([np.nan])
     else:
-        a0 = 0.0000764; a1 = 0.000142; a2 = 0.0027
-        a3 = -windstress/rho_air
-        r = np.roots([a0,a1,a2,a3])
-        zro = abs(r.imag)<1e-7
+        a0 = 0.0000764
+        a1 = 0.000142
+        a2 = 0.0027
+        a3 = -windstress / rho_air
+        r = np.roots([a0, a1, a2, a3])
+        zro = abs(r.imag) < 1e-7
         if np.sum(zro) > 0:
             speed = r.real[zro]
         else:
             speed = np.array([np.nan])
-            
+
     return speed[0]
-
-
-
 
 
 # # %% Interpolation function with gap handling
 # # =============================================================================
 # def custom_interp(x_data, y_data, x_levels, x_fill=25, x_gap = 'dynamic'):
-#     """  
+#     """
 #     Updated Feb 24 2025
 #     This function is adapted in mod_argo, regrid_pressure_levels(), for use on float data
 #     (Adapting for Hannah, originally from in mod_argo interpolate_z_profile())
 #     Function to interpolate single float profile data (pchip) to chosen pressure levels,
-#     Does not fit over vertical gaps in the data, with cutoff defined by x_gap. 
+#     Does not fit over vertical gaps in the data, with cutoff defined by x_gap.
 
 #     @param      x_data: 1D array of x-values (pressure), length N
 #                 y_data: 1D array of y-values (T, S, NO3, O2, etc), length N
@@ -447,7 +464,7 @@ def wind_speed(windstress,rho_air=1.2):
 #     prof['continuous_id'] = prof['marker'].cumsum().ffill().fillna(0).astype(int)
 
 #     # If there are no gaps, all points will be assigned to same continuous_id
-#     # Fit pchip to each continuous_id 
+#     # Fit pchip to each continuous_id
 #     for _, subprof in prof.groupby('continuous_id'):
 #         xmin = subprof['x'].min(); xmax = subprof['x'].max()
 #         subx_levels = [x for x in x_levels if x > xmin and x < xmax] # valid pres levels
@@ -455,7 +472,7 @@ def wind_speed(windstress,rho_air=1.2):
 #             f = scipy.interpolate.PchipInterpolator(x=subprof['x'], y=subprof['y'], extrapolate = False)
 #             output.loc[subx_levels, 'y_interp'] = f(subx_levels)
 
-#     # ==== HANDLE SURFACE GAPS 
+#     # ==== HANDLE SURFACE GAPS
 #     # Note that by default, pchip without extrapolation will fill surface values < minimum
 #     # Fill surface with the nearest neighbor if the first observed value is below x_fill = 25
 #     first_obs = prof.iloc[0]
@@ -463,11 +480,10 @@ def wind_speed(windstress,rho_air=1.2):
 #         # Decide here if you want to fill with first interpolated value, or first observed value
 #         # fill_value = output.dropna().iloc[0].y_interp
 #         fill_value = prof.iloc[0].y
-        
+
 #         # Determine surface index values to fill
 #         fill_index = [x for x in output.index if x < first_obs.x]
 #         output.loc[fill_index, 'y_interp'] = np.tile(fill_value, len(fill_index))
 
-        
-#     return output.y_interp.values
 
+#     return output.y_interp.values

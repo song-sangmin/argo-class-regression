@@ -12,17 +12,25 @@ from sklearn.base import clone
 from xgboost import XGBRegressor
 
 
-def run_model_application(client, trainval_data, application_data,
-                          n_clusters, sea_ice_clusters,
-                          feat_list, var_predict,
-                          n_folds,
-                          cluster_models,
-                          cv_type, scoring_metric,
-                          outpath, outfile,
-                          save_models=False,
-                          cluster_models_source=None,
-                          test_data=None):
-    """ Main dask implementation
+def run_model_application(
+    client,
+    trainval_data,
+    application_data,
+    n_clusters,
+    sea_ice_clusters,
+    feat_list,
+    var_predict,
+    n_folds,
+    cluster_models,
+    cv_type,
+    scoring_metric,
+    outpath,
+    outfile,
+    save_models=False,
+    cluster_models_source=None,
+    test_data=None,
+):
+    """Main dask implementation
     Train one final clustered model on trainval_data and apply it to application_data.
 
     For each cluster: tune hyperparameters on n_folds (single-level CV), fit out-of-fold
@@ -54,28 +62,30 @@ def run_model_application(client, trainval_data, application_data,
     ###################
 
     print('Setting up data containers...')
-    class_tags = ['cluster' + str(k) for k in range(1, n_clusters+1)]
+    class_tags = ['cluster' + str(k) for k in range(1, n_clusters + 1)]
     soclass_cvtainers = {soclass: None for soclass in class_tags}
-    for classnum in range(1, n_clusters+1):
+    for classnum in range(1, n_clusters + 1):
         soclass_cvtainers['cluster' + str(classnum)] = crossvalidation.setup_cv_container(
-                                trainval_data[trainval_data.cluster==classnum],
-                                n_outer = n_folds,
-                                n_inner = None,
-                                spatial_cv = 'platform' if cv_type == 'profile' else cv_type,
-                                indexer = 'profid' if cv_type == 'profile' else 'platform_id')
+            trainval_data[trainval_data.cluster == classnum],
+            n_outer=n_folds,
+            n_inner=None,
+            spatial_cv='platform' if cv_type == 'profile' else cv_type,
+            indexer='profid' if cv_type == 'profile' else 'platform_id',
+        )
     cvtainers_future = client.scatter(soclass_cvtainers, broadcast=True)
 
     # Regressor, parameter combinations and features for each cluster
     class_regressors = {}
     class_param_combinations = {}
     class_feat_lists = {}
-    for classnum in range(1, n_clusters+1):
+    for classnum in range(1, n_clusters + 1):
         training_algorithm, tuning_grid = cluster_models[classnum]
         class_regressors[classnum] = get_regressor(training_algorithm)
         class_param_combinations[classnum] = procedures_cv.make_parameter_combinations(tuning_grid)
         if classnum not in sea_ice_clusters:
             class_feat_lists[classnum] = [x for x in feat_list if x != 'sea_ice']
-        else: class_feat_lists[classnum] = feat_list.copy()
+        else:
+            class_feat_lists[classnum] = feat_list.copy()
 
     ###################
     # 1. HYPERPARAMETER TUNING
@@ -84,17 +94,18 @@ def run_model_application(client, trainval_data, application_data,
     print('Building dask tasks for hyperparameter tuning...')
     tuning_futures = []
 
-    for classnum in range(1, n_clusters+1):
+    for classnum in range(1, n_clusters + 1):
         for param_set in class_param_combinations[classnum]:
             tuning_future = client.submit(
-                fit_tuning_folds, # returns pd Series
+                fit_tuning_folds,  # returns pd Series
                 param_set,
                 cvtainers_future,
                 'cluster' + str(classnum),
                 class_regressors[classnum],
                 class_feat_lists[classnum],
                 var_predict,
-                scoring_metric)
+                scoring_metric,
+            )
 
             tuning_futures.append(tuning_future)
 
@@ -124,24 +135,26 @@ def run_model_application(client, trainval_data, application_data,
 
         for foldnum in range(1, n_folds + 1):
             fold_future = client.submit(
-                    procedures_cv.fit_outer_class_model, # returns a dict with outer_foldtag, cluster, model, tuned_params
-                    'fold' + str(foldnum),
-                    tuned_params,
-                    cvtainers_future,
-                    classtag,
-                    class_regressors[classnum],
-                    class_feat_lists[classnum],
-                    var_predict)
-            fold_futures.append(fold_future)
-
-        final_future = client.submit(
-                fit_final_class_model, # returns a dict with cluster, model, tuned_params
+                procedures_cv.fit_outer_class_model,  # returns a dict with outer_foldtag, cluster, model, tuned_params
+                'fold' + str(foldnum),
                 tuned_params,
                 cvtainers_future,
                 classtag,
                 class_regressors[classnum],
                 class_feat_lists[classnum],
-                var_predict)
+                var_predict,
+            )
+            fold_futures.append(fold_future)
+
+        final_future = client.submit(
+            fit_final_class_model,  # returns a dict with cluster, model, tuned_params
+            tuned_params,
+            cvtainers_future,
+            classtag,
+            class_regressors[classnum],
+            class_feat_lists[classnum],
+            var_predict,
+        )
         final_futures.append(final_future)
 
     fold_results = client.gather(fold_futures)
@@ -157,18 +170,19 @@ def run_model_application(client, trainval_data, application_data,
     for foldnum in range(1, n_folds + 1):
         foldtag = 'fold' + str(foldnum)
 
-        fold_CMV = regression.ClusteredModelVersion(ind_list = [x for x in range(1,n_clusters+1)],
-                                                 feat_list = feat_list)
-        fold_valDF = pd.concat([soclass_cvtainers[classtag].get_validation_data(foldtag)
-                                for classtag in class_tags], axis=0)
+        fold_CMV = regression.ClusteredModelVersion(ind_list=[x for x in range(1, n_clusters + 1)], feat_list=feat_list)
+        fold_valDF = pd.concat(
+            [soclass_cvtainers[classtag].get_validation_data(foldtag) for classtag in class_tags], axis=0
+        )
 
-        for classnum in range(1,n_clusters+1):
+        for classnum in range(1, n_clusters + 1):
             classtag = 'cluster' + str(classnum)
             fold_CMV.models[classnum] = model_finder.loc[foldtag, classtag].values[0]
             fold_CMV.params[classnum] = class_best_params.loc[classtag, 'params']
 
         ClusteredModel_FoldResults[foldtag] = procedures_cv.evaluate_outer_fold(
-                                                    fold_CMV, fold_valDF, feat_list, var_predict, sea_ice_clusters)
+            fold_CMV, fold_valDF, feat_list, var_predict, sea_ice_clusters
+        )
 
     oof_predictions = crossvalidation.collapse_folds(ClusteredModel_FoldResults).weighted_validation
     cal_coeffs = regression.get_clustered_calibration_coeffs(oof_predictions, target_var=var_predict)
@@ -177,20 +191,19 @@ def run_model_application(client, trainval_data, application_data,
     # 5. APPLY FINAL MODEL
     ###################
     print('Applying final clustered model to application data...')
-    final_CMV = regression.ClusteredModelVersion(ind_list = [x for x in range(1,n_clusters+1)],
-                                                 feat_list = feat_list)
+    final_CMV = regression.ClusteredModelVersion(ind_list=[x for x in range(1, n_clusters + 1)], feat_list=feat_list)
     for res in final_results:
         classnum = int(res['cluster'].replace('cluster', ''))
         final_CMV.models[classnum] = res['model']
         final_CMV.params[classnum] = res['tuned_params']
     final_CMV.cal_coeffs = cal_coeffs
 
-    application_data = apply_final_model(final_CMV, application_data, feat_list, var_predict,
-                                         sea_ice_clusters, n_clusters)
+    application_data = apply_final_model(
+        final_CMV, application_data, feat_list, var_predict, sea_ice_clusters, n_clusters
+    )
     if test_data is not None:
         print('Evaluating the final clustered model on the test data...')
-        test_data = apply_final_model(final_CMV, test_data, feat_list, var_predict,
-                                      sea_ice_clusters, n_clusters)
+        test_data = apply_final_model(final_CMV, test_data, feat_list, var_predict, sea_ice_clusters, n_clusters)
         test_data['test_error'] = test_data['weighted_pred'] - test_data[var_predict]
         test_data['calibrated_test_error'] = test_data['lincal_pred'] - test_data[var_predict]
         test_metrics = get_test_metrics(test_data)
@@ -201,22 +214,25 @@ def run_model_application(client, trainval_data, application_data,
     ##############
     print('Saving results...')
 
-    ClusteredModel_TuningResults = (tuning_summary
-                                    .drop(columns=['params'])
-                                    .set_index('cluster'))  # mean fold score per param set
+    ClusteredModel_TuningResults = tuning_summary.drop(columns=['params']).set_index(
+        'cluster'
+    )  # mean fold score per param set
     ClusteredModel_BestParams = class_best_params.copy()
-    ClusteredModel_BestParams.insert(0, 'algorithm',
-                                     [cluster_models[int(x.replace('cluster', ''))][0] for x in ClusteredModel_BestParams.index])
+    ClusteredModel_BestParams.insert(
+        0, 'algorithm', [cluster_models[int(x.replace('cluster', ''))][0] for x in ClusteredModel_BestParams.index]
+    )
     ClusteredModel_CalCoeffs = pd.DataFrame.from_dict(
-                                    {'cluster' + str(k): v for k, v in sorted(cal_coeffs.items())},
-                                    orient='index', columns=['slope', 'intercept'])
+        {'cluster' + str(k): v for k, v in sorted(cal_coeffs.items())}, orient='index', columns=['slope', 'intercept']
+    )
     ClusteredModel_CalCoeffs.index.name = 'cluster'
 
     datetag = datetime.now().strftime('%Y%m%d')
-    savefiles = {'predictions': outpath + outfile + '_predictions_acc' + datetag + '.csv',
-                 'tuning scores': outpath + outfile + '_tuningScores_acc' + datetag + '.csv',
-                 'best params': outpath + outfile + '_bestParams_acc' + datetag + '.csv',
-                 'calibration coefficients': outpath + outfile + '_calCoeffs_acc' + datetag + '.csv'}
+    savefiles = {
+        'predictions': outpath + outfile + '_predictions_acc' + datetag + '.csv',
+        'tuning scores': outpath + outfile + '_tuningScores_acc' + datetag + '.csv',
+        'best params': outpath + outfile + '_bestParams_acc' + datetag + '.csv',
+        'calibration coefficients': outpath + outfile + '_calCoeffs_acc' + datetag + '.csv',
+    }
     application_data.to_csv(savefiles['predictions'])
     ClusteredModel_TuningResults.to_csv(savefiles['tuning scores'])
     ClusteredModel_BestParams.to_csv(savefiles['best params'])
@@ -229,15 +245,21 @@ def run_model_application(client, trainval_data, application_data,
 
     if save_models:
         savefiles['final models'] = outpath + outfile + '_finalModels_acc' + datetag + '.joblib'
-        joblib.dump({'models': final_CMV.models, 'params': final_CMV.params,
-                     'cal_coeffs': cal_coeffs, 'feat_list': feat_list,
-                     'sea_ice_clusters': sea_ice_clusters,
-                     'algorithms': {k: v[0] for k, v in cluster_models.items()}},
-                    savefiles['final models'])
+        joblib.dump(
+            {
+                'models': final_CMV.models,
+                'params': final_CMV.params,
+                'cal_coeffs': cal_coeffs,
+                'feat_list': feat_list,
+                'sea_ice_clusters': sea_ice_clusters,
+                'algorithms': {k: v[0] for k, v in cluster_models.items()},
+            },
+            savefiles['final models'],
+        )
 
     end_time = datetime.now().strftime('%Y%m%d %H:%M:%S')
     savefiles['run description'] = outpath + outfile + '_runDescription_acc' + datetag + '.txt'
-    with open(savefiles['run description'], "w") as file:
+    with open(savefiles['run description'], 'w') as file:
         file.write('RUN_START: ' + start_time + '\n')
         file.write('RUN_END: ' + end_time + '\n')
         file.write('N_FOLDS: ' + str(n_folds) + '\n')
@@ -250,13 +272,13 @@ def run_model_application(client, trainval_data, application_data,
         if test_data is not None:
             overall = test_metrics.loc['all']
             file.write('N_TEST: ' + str(len(test_data)) + '\n')
-            file.write(f"TEST_RMSE: {overall['rmse']:.4f} (calibrated {overall['calibrated_rmse']:.4f})\n")
-            file.write(f"TEST_MAE: {overall['mae']:.4f} (calibrated {overall['calibrated_mae']:.4f})\n")
-        for classnum in range(1, n_clusters+1):
+            file.write(f'TEST_RMSE: {overall["rmse"]:.4f} (calibrated {overall["calibrated_rmse"]:.4f})\n')
+            file.write(f'TEST_MAE: {overall["mae"]:.4f} (calibrated {overall["calibrated_mae"]:.4f})\n')
+        for classnum in range(1, n_clusters + 1):
             training_algorithm, tuning_grid = cluster_models[classnum]
-            file.write(f"CLUSTER{classnum}: {training_algorithm}\n")
+            file.write(f'CLUSTER{classnum}: {training_algorithm}\n')
             for key, value in tuning_grid.items():
-                file.write(f"    {key}: {value}\n")
+                file.write(f'    {key}: {value}\n')
 
     for label, savefile in savefiles.items():
         print('Saved ' + label + ' to ' + savefile)
@@ -268,13 +290,20 @@ def run_model_application(client, trainval_data, application_data,
 def get_test_metrics(test_data):
     """n, RMSE, MAE and bias (prediction - target) of the uncalibrated (weighted_pred) and
     calibrated (lincal_pred) test predictions, for all samples and for each assigned cluster."""
+
     def metrics(df):
         out = {'n': len(df)}
         for prefix, col in [('', 'test_error'), ('calibrated_', 'calibrated_test_error')]:
             err = df[col].dropna()
-            out.update({prefix + 'rmse': np.sqrt((err**2).mean()), prefix + 'mae': err.abs().mean(),
-                        prefix + 'bias': err.mean()})
+            out.update(
+                {
+                    prefix + 'rmse': np.sqrt((err**2).mean()),
+                    prefix + 'mae': err.abs().mean(),
+                    prefix + 'bias': err.mean(),
+                }
+            )
         return out
+
     rows = {'all': metrics(test_data)}
     for classnum, df in test_data.groupby('cluster'):
         rows['cluster' + str(int(classnum))] = metrics(df)
@@ -284,7 +313,7 @@ def get_test_metrics(test_data):
 
 
 def get_regressor(training_algorithm):
-    """ Base regressor for each algorithm, add more options as needed """
+    """Base regressor for each algorithm, add more options as needed"""
     if training_algorithm == 'RFR':
         return RandomForestRegressor(random_state=24, n_jobs=1)
     elif training_algorithm == 'XGB':
@@ -294,23 +323,25 @@ def get_regressor(training_algorithm):
     raise ValueError('Unknown training_algorithm: ' + str(training_algorithm))
 
 
-def fit_tuning_folds(hyperparams_set,
-                     data_cvtainers, cluster,
-                     use_regressor,
-                     class_feat_list, var_predict,
-                     scoring_metric='median_abs_error'):
+def fit_tuning_folds(
+    hyperparams_set,
+    data_cvtainers,
+    cluster,
+    use_regressor,
+    class_feat_list,
+    var_predict,
+    scoring_metric='median_abs_error',
+):
     """
     Iterate over tuning folds given one set of parameters for one cluster.
     Single-level version of procedures_cv.fit_inner_folds.
     """
-    cluster_data = data_cvtainers[cluster] # NestedCV object
+    cluster_data = data_cvtainers[cluster]  # NestedCV object
 
     fold_scores = []
     for foldtag in cluster_data.fold_list:
-        fold_train = (cluster_data.get_training_data(foldtag)
-                            .dropna(subset=class_feat_list + [var_predict]).copy())
-        fold_val = (cluster_data.get_validation_data(foldtag)
-                            .dropna(subset=class_feat_list + [var_predict]).copy())
+        fold_train = cluster_data.get_training_data(foldtag).dropna(subset=class_feat_list + [var_predict]).copy()
+        fold_val = cluster_data.get_validation_data(foldtag).dropna(subset=class_feat_list + [var_predict]).copy()
 
         Mdl = clone(use_regressor)
         Mdl.set_params(**hyperparams_set)
@@ -319,26 +350,20 @@ def fit_tuning_folds(hyperparams_set,
         prediction = Mdl.predict(fold_val[class_feat_list])
 
         # Choose scoring metric, add others as desired
-        if scoring_metric=='median_abs_error':
-            score = np.median(np.abs(prediction - fold_val[var_predict])) #procedures_cv.calculate_MAE(prediction, fold_val[var_predict])
+        if scoring_metric == 'median_abs_error':
+            score = np.median(
+                np.abs(prediction - fold_val[var_predict])
+            )  # procedures_cv.calculate_MAE(prediction, fold_val[var_predict])
             fold_scores.append(score)
-    mean_score = np.mean(fold_scores) # mean score for that hyp set amongst folds
+    mean_score = np.mean(fold_scores)  # mean score for that hyp set amongst folds
 
-    return pd.Series({'cluster': cluster,
-                      'params': hyperparams_set,
-                      'mean_score': mean_score} | hyperparams_set)
+    return pd.Series({'cluster': cluster, 'params': hyperparams_set, 'mean_score': mean_score} | hyperparams_set)
 
 
-def fit_final_class_model(tuned_params,
-                          data_cvtainers, classtag,
-                          use_regressor,
-                          class_feat_list,
-                          var_predict):
-    """ Fit a class-dependent model on all of the cluster's data using best hyperparameters """
+def fit_final_class_model(tuned_params, data_cvtainers, classtag, use_regressor, class_feat_list, var_predict):
+    """Fit a class-dependent model on all of the cluster's data using best hyperparameters"""
     cluster_data = data_cvtainers[classtag]
-    class_train = (cluster_data.input_data
-                              .dropna(subset=class_feat_list + [var_predict])
-                              .copy())
+    class_train = cluster_data.input_data.dropna(subset=class_feat_list + [var_predict]).copy()
     Mdl = clone(use_regressor)
     Mdl.set_params(**tuned_params)
     Mdl.fit(class_train[class_feat_list], class_train[var_predict])
@@ -346,25 +371,27 @@ def fit_final_class_model(tuned_params,
     return {'cluster': classtag, 'model': Mdl, 'tuned_params': tuned_params}
 
 
-def apply_final_model(final_CMV, application_data, feat_list, var_predict,
-                      sea_ice_clusters, n_clusters):
+def apply_final_model(final_CMV, application_data, feat_list, var_predict, sea_ice_clusters, n_clusters):
     """
     Add cluster{k}_pred, weighted_pred, cluster{k}_calpred and lincal_pred columns to application_data.
     Rows missing a required feature are kept, with NaN predictions.
     """
-    pred_cols = (['cluster' + str(k) + '_pred' for k in range(1, n_clusters+1)] + ['weighted_pred']
-                 + ['cluster' + str(k) + '_calpred' for k in range(1, n_clusters+1)] + ['lincal_pred'])
+    pred_cols = (
+        ['cluster' + str(k) + '_pred' for k in range(1, n_clusters + 1)]
+        + ['weighted_pred']
+        + ['cluster' + str(k) + '_calpred' for k in range(1, n_clusters + 1)]
+        + ['lincal_pred']
+    )
 
     # Positional index so predictions map back even if the original index has duplicates
     applyDF = application_data.reset_index(drop=True)
 
-    predDF = regression.apply_cluster_RFR(feat_list, final_CMV, applyDF,
-                                          target_var = var_predict,
-                                          sea_ice_clusters = sea_ice_clusters,
-                                          target_known = False)
-    predDF = regression.apply_clustered_calibration(final_CMV.cal_coeffs, predDF, n_clusters,
-                                                    target_var = var_predict,
-                                                    target_known = False)
+    predDF = regression.apply_cluster_RFR(
+        feat_list, final_CMV, applyDF, target_var=var_predict, sea_ice_clusters=sea_ice_clusters, target_known=False
+    )
+    predDF = regression.apply_clustered_calibration(
+        final_CMV.cal_coeffs, predDF, n_clusters, target_var=var_predict, target_known=False
+    )
 
     application_data = application_data.copy()
     application_data[pred_cols] = predDF[pred_cols].reindex(applyDF.index).to_numpy()

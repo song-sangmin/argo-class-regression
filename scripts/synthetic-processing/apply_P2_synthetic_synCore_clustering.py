@@ -16,6 +16,7 @@ in df.attrs), the application set for regression-input-prep.py.
 Usage:
     python apply_P2_synthetic_synCore_clustering.py --config ../../configs/synthetic_CRUSOE.toml
 """
+
 import os
 import sys
 from datetime import datetime
@@ -26,7 +27,7 @@ import xarray as xr
 from argoclare import pipeline
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'clustering'))
-import p2_classes # noqa: E402
+import p2_classes  # noqa: E402
 
 
 def main():
@@ -44,28 +45,49 @@ def main():
     core['platform_id'], core['sample_id'] = core['wmoid'].astype(int).astype(str), core['prof_datetag']
     core, (n_matched, n_filled) = p2_classes.classify_float_samples(core, 'profid', finder, prob_cols, args.float_days)
     n_core = len(core)
-    core = p2_classes.drop_unclassified(core, 'synthetic core', n_matched, n_filled,
-                                        f'from the same float within {args.float_days:g} days')
+    core = p2_classes.drop_unclassified(
+        core, 'synthetic core', n_matched, n_filled, f'from the same float within {args.float_days:g} days'
+    )
 
     core['year'] = core['datetime'].dt.year
-    lead = ['profid', 'platform', 'platform_id', 'sample_id', 'datetime', 'year', 'latitude', 'longitude',
-            'pco2_ocean', 'pco2_atmos', 'delta_pco2'] + prob_cols + ['class_assign', 'class_profid',
-            'class_source', 'class_dt_days']
+    lead = (
+        [
+            'profid',
+            'platform',
+            'platform_id',
+            'sample_id',
+            'datetime',
+            'year',
+            'latitude',
+            'longitude',
+            'pco2_ocean',
+            'pco2_atmos',
+            'delta_pco2',
+        ]
+        + prob_cols
+        + ['class_assign', 'class_profid', 'class_source', 'class_dt_days']
+    )
     core = core[lead + [c for c in core.columns if c not in lead]]
 
     first, last = core['year'].min(), core['year'].max()
     yrs = f'{first}-{last}' if last > first else str(first)
     datetag = datetime.now().strftime('%Y%m%d')
-    p2_classes.save_parquet(core, savefile, {
-        'title': f'P2 synthetic core Argo application dataset {yrs}: synthetic core profiles with model '
-                 'features and GMM class probabilities (GMM fit on synthetic profiles); unclassified dropped.',
-        'pcm_params': meta.get('pcm_params', ''),
-        'pcm_finder': os.path.basename(args.pcm_finder),
-        'class_numbering': meta.get('class_numbering', ''),
-        'gapfill': f'nearest classified profile of the same float (<{args.float_days:g} d), before/after must agree',
-        'p1_input': os.path.basename(args.core_p1),
-        'counts': {'profiles': n_core, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n_core - len(core)},
-        **run.attrs(), 'date': datetag})
+    p2_classes.save_parquet(
+        core,
+        savefile,
+        {
+            'title': f'P2 synthetic core Argo application dataset {yrs}: synthetic core profiles with model '
+            'features and GMM class probabilities (GMM fit on synthetic profiles); unclassified dropped.',
+            'pcm_params': meta.get('pcm_params', ''),
+            'pcm_finder': os.path.basename(args.pcm_finder),
+            'class_numbering': meta.get('class_numbering', ''),
+            'gapfill': f'nearest classified profile of the same float (<{args.float_days:g} d), before/after must agree',
+            'p1_input': os.path.basename(args.core_p1),
+            'counts': {'profiles': n_core, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n_core - len(core)},
+            **run.attrs(),
+            'date': datetag,
+        },
+    )
     print(f'\n{len(core)} profiles -> {savefile}\n{core["class_assign"].value_counts().sort_index().to_string()}')
     run.finish()
 

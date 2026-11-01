@@ -23,6 +23,7 @@ Usage:
     python create_L0_raw_argo.py --config ../../configs/example.toml --datasets core bgc
     python create_L0_raw_argo.py --config ../../configs/example.toml --datasets bgc --years 2020
 """
+
 import sys
 from datetime import datetime
 
@@ -55,12 +56,18 @@ def main():
     years = run.years()
 
     # Check every output before the first (slow) download
-    todo = [(dataset, yr) for dataset in datasets for yr in years
-            if not run.skip(['L0_profiles', 'L0_index'], dataset, yr=yr)]
+    todo = [
+        (dataset, yr)
+        for dataset in datasets
+        for yr in years
+        if not run.skip(['L0_profiles', 'L0_index'], dataset, yr=yr)
+    ]
     if not todo:
         return run.nothing_to_do()
-    outputs = {(dataset, yr): (run.output('L0_profiles', dataset, yr=yr), run.output('L0_index', dataset, yr=yr))
-               for dataset, yr in todo}
+    outputs = {
+        (dataset, yr): (run.output('L0_profiles', dataset, yr=yr), run.output('L0_index', dataset, yr=yr))
+        for dataset, yr in todo
+    }
 
     sources = {}
     for dataset in dict.fromkeys(dataset for dataset, _ in todo):
@@ -73,7 +80,7 @@ def main():
         if cfg['source'] == 'gdac':
             argopy.set_options(src='gdac', gdac=run.input('gdac'))
         else:
-            argopy.set_options(src='erddap') # Ifremer database, updated daily
+            argopy.set_options(src='erddap')  # Ifremer database, updated daily
         ds = 'phy' if dataset == 'core' else 'bgc'
         fetcher_kwargs = dict(run.section('L0.fetcher'))
         if fetcher_kwargs.get('progress') and not sys.stdout.isatty():

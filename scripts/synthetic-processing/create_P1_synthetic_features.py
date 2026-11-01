@@ -14,6 +14,7 @@ Reads [files] L3_index for bgc and core, and writes netcdfs along profid (longit
 Usage:
     python create_P1_synthetic_features.py --config ../../configs/synthetic_CRUSOE.toml
 """
+
 import os
 import sys
 from datetime import datetime
@@ -27,7 +28,7 @@ import argoclare.oceantools as mod_ocean
 from argoclare import pipeline
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data-processing'))
-import p1_features # noqa: E402
+import p1_features  # noqa: E402
 
 
 def process_year(yearDF, yr, ref_time):
@@ -54,8 +55,10 @@ def main():
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
     n_jobs = args.n_jobs or run.section('P1').get('n_jobs', 4)
-    jobs = [(name, run.input('L3_index', name), platform, run.output('P1', name))
-            for name, platform in [('bgc', 'synBgcArgo'), ('core', 'synCoreArgo')]]
+    jobs = [
+        (name, run.input('L3_index', name), platform, run.output('P1', name))
+        for name, platform in [('bgc', 'synBgcArgo'), ('core', 'synCoreArgo')]
+    ]
 
     datetag = datetime.now().strftime('%Y%m%d')
     for name, index_file, platform, savefile in jobs:
@@ -63,13 +66,20 @@ def main():
         df = make_p1(index_file, platform, n_jobs, run.ref_time)
         first, last = df.datetime.dt.year.min(), df.datetime.dt.year.max()
         yrs = f'{first}-{last}' if last > first else str(first)
-        p1_features.save_netcdf(df, 'profid', savefile, {
-            'title': f'P1 synthetic {name} Argo dataset {yrs}: model (E3SM) surface variables and '
-                     'regression features at each synthetic profile (one row per profid).',
-            'source': os.path.basename(index_file),
-            'features': 'sea_ice, mld, wind_speed, atmos_pres, pco2 from the model; time variables, '
-                        'max_solar_rad and log_mld added; no ADT',
-            **run.attrs(), 'date': datetag})
+        p1_features.save_netcdf(
+            df,
+            'profid',
+            savefile,
+            {
+                'title': f'P1 synthetic {name} Argo dataset {yrs}: model (E3SM) surface variables and '
+                'regression features at each synthetic profile (one row per profid).',
+                'source': os.path.basename(index_file),
+                'features': 'sea_ice, mld, wind_speed, atmos_pres, pco2 from the model; time variables, '
+                'max_solar_rad and log_mld added; no ADT',
+                **run.attrs(),
+                'date': datetag,
+            },
+        )
         print(f'  saved {len(df)} profiles to {savefile}')
     run.finish()
 

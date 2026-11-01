@@ -17,6 +17,7 @@ explicitly (--sea-ice-clusters 1 to use it everywhere, or --drop-features sea_ic
 Usage:
     python regression-trainval-no-clustering.py --config ../../configs/southernOcean_CRUSOE.toml
 """
+
 import importlib.util
 import os
 from datetime import datetime
@@ -27,7 +28,8 @@ from argoclare import pipeline
 
 # regression-input-prep.py has a hyphen in its name, so import it by path
 _spec = importlib.util.spec_from_file_location(
-    'regression_input_prep', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'regression-input-prep.py'))
+    'regression_input_prep', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'regression-input-prep.py')
+)
 prep = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(prep)
 
@@ -41,8 +43,9 @@ def main():
     target = cfg.get('target', 'delta_pco2')
 
     out_dir = args.out_dir or os.path.join(os.path.dirname(run.path('reg_trainval', ice_tag='')), 'no_clusters')
-    out_file = os.path.join(os.path.abspath(out_dir),
-                            f'combined_trainval_noclusters_{run.pcm}_acc{datetime.now():%Y%m%d}.csv')
+    out_file = os.path.join(
+        os.path.abspath(out_dir), f'combined_trainval_noclusters_{run.pcm}_acc{datetime.now():%Y%m%d}.csv'
+    )
     if os.path.exists(out_file) and not run.overwrite:
         raise SystemExit(f'Output exists, pass --overwrite to replace it: {out_file}')
 
