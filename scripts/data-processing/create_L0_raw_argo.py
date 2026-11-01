@@ -7,7 +7,8 @@ dataset in the config ([L0.core] / [L0.bgc] source):
 core uses ds='phy' and bgc ds='bgc'. Both use the [L0.fetcher] options (expert mode: all data
 and QC flags; QC is applied in create_L1_QC_argo.py) over the [region] box and pressure range,
 <yr>-01-01 to <yr>-12-31, and are converted from points to profiles (N_PROF, N_LEVELS).
-Writes [files] L0_profiles (netcdf) and L0_index (csv) for each year.
+Writes [files] L0_profiles (netcdf) and L0_index (csv) for each year and each of --datasets
+(in the order given; every output is checked before the first download).
 
 CRUSOE files (configs/southernOcean_CRUSOE.toml):
     core: GDAC January 2025 snapshot, accessed 20250207 (~1 hr per year)
@@ -19,8 +20,8 @@ Cite: Argo (2025). Argo float data and metadata from Global Data Assembly Centre
 SEANOE. https://doi.org/10.17882/42182
 
 Usage:
-    python create_L0_raw_argo.py --config ../../configs/example.toml --dataset core
-    python create_L0_raw_argo.py --config ../../configs/example.toml --dataset bgc --years 2020
+    python create_L0_raw_argo.py --config ../../configs/example.toml --datasets core bgc
+    python create_L0_raw_argo.py --config ../../configs/example.toml --datasets bgc --years 2020
 """
 import sys
 from datetime import datetime
@@ -46,40 +47,47 @@ def fetch_year(yr, ds, box, pres, fetcher_kwargs):
 
 
 def main():
-    parser = pipeline.parser(__doc__)
-    parser.add_argument('--dataset', choices=['core', 'bgc'], required=True)
+    parser = pipeline.add_skip_arg(pipeline.add_datasets_arg(pipeline.parser(__doc__)))
     parser.add_argument('--years', type=int, nargs='+', default=None, help='Default: [run] years')
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
-    cfg = run.section(f'L0.{args.dataset}')
+    datasets = pipeline.datasets(args)
     years = run.years()
 
     # Check every output before the first (slow) download
-    outputs = {yr: (run.output('L0_profiles', args.dataset, yr=yr), run.output('L0_index', args.dataset, yr=yr))
-               for yr in years}
+    todo = [(dataset, yr) for dataset in datasets for yr in years
+            if not run.skip(['L0_profiles', 'L0_index'], dataset, yr=yr)]
+    if not todo:
+        return run.nothing_to_do()
+    outputs = {(dataset, yr): (run.output('L0_profiles', dataset, yr=yr), run.output('L0_index', dataset, yr=yr))
+               for dataset, yr in todo}
 
-    # Fresh start
-    argopy.reset_options()
-    argopy.clear_cache()
-    argopy.set_options(cachedir=run.path('argopy_cache'))
-    if cfg['source'] == 'gdac':
-        argopy.set_options(src='gdac', gdac=run.input('gdac'))
-    else:
-        argopy.set_options(src='erddap') # Ifremer database, updated daily
-    ds = 'phy' if args.dataset == 'core' else 'bgc'
-    fetcher_kwargs = dict(run.section('L0.fetcher'))
-    if fetcher_kwargs.get('progress') and not sys.stdout.isatty():
-        print('No terminal (batch job or redirected output): argopy progress display off')
-        fetcher_kwargs['progress'] = False
+    sources = {}
+    for dataset in dict.fromkeys(dataset for dataset, _ in todo):
+        cfg = run.section(f'L0.{dataset}')
+        sources[dataset] = cfg['source']
+        # Fresh start
+        argopy.reset_options()
+        argopy.clear_cache()
+        argopy.set_options(cachedir=run.path('argopy_cache'))
+        if cfg['source'] == 'gdac':
+            argopy.set_options(src='gdac', gdac=run.input('gdac'))
+        else:
+            argopy.set_options(src='erddap') # Ifremer database, updated daily
+        ds = 'phy' if dataset == 'core' else 'bgc'
+        fetcher_kwargs = dict(run.section('L0.fetcher'))
+        if fetcher_kwargs.get('progress') and not sys.stdout.isatty():
+            print('No terminal (batch job or redirected output): argopy progress display off')
+            fetcher_kwargs['progress'] = False
 
-    for yr in years:
-        print(f'===> Fetching {yr} {args.dataset}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
-        profiles, index = fetch_year(yr, ds, run.box, run.pres, fetcher_kwargs)
-        profiles_file, index_file = outputs[yr]
-        profiles.assign_attrs(run.attrs()).to_netcdf(profiles_file)
-        index.to_csv(index_file)
-        print(f'Saved {profiles.sizes["N_PROF"]} profiles to {profiles_file}')
-    run.finish(source=cfg['source'], accessed=datetime.now().strftime('%Y%m%d'))
+        for yr in [yr for ds, yr in todo if ds == dataset]:
+            print(f'===> Fetching {yr} {dataset}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
+            profiles, index = fetch_year(yr, ds, run.box, run.pres, fetcher_kwargs)
+            profiles_file, index_file = outputs[(dataset, yr)]
+            profiles.assign_attrs(run.attrs()).to_netcdf(profiles_file)
+            index.to_csv(index_file)
+            print(f'Saved {profiles.sizes["N_PROF"]} profiles to {profiles_file}')
+    run.finish(source=sources, accessed=datetime.now().strftime('%Y%m%d'))
 
 
 if __name__ == '__main__':

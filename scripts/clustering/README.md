@@ -6,7 +6,7 @@ settings are in the config's `[P2]` table, and the regression settings are in `[
 | Step | Command (from `scripts/`) | Writes (`[files]` key) |
 |---|---|---|
 | Fit | `python clustering/fit_argo_clustering.py --config $C` | `P2_finder`, `P2_fit` (+ `P2_model` with `--save-model`) |
-| Classify | `python clustering/apply_P2_classes.py --config $C --dataset <name>`, once per P1 dataset | `P2_<name>` |
+| Classify | `python clustering/apply_P2_classes.py --config $C --datasets <name> [<name> ...]`, for one or more P1 datasets | `P2_<name>` |
 | Regression inputs | `python regression/regression-input-prep.py --config $C` | `P2_trainval`, `P2_test`, `P2_application`, `reg_trainval`, `reg_application`, `reg_info` |
 
 - **Fit**: PCA + GMM on the CT/SA profiles of the L3 datasets in `[P2] fit_datasets`
@@ -28,14 +28,13 @@ cd scripts
 # Example: cluster all core + BGC profiles together, then one P2 file per platform
 C=../configs/example.toml
 python clustering/fit_argo_clustering.py --config $C
-python clustering/apply_P2_classes.py --config $C --dataset core
-python clustering/apply_P2_classes.py --config $C --dataset bgc
+python clustering/apply_P2_classes.py --config $C --datasets core bgc
 python regression/regression-input-prep.py --config $C       # trains on bgc (target pH), applies to core
 
 # CRUSOE: train on SOCCOM + SOCAT, apply to core
 C=../configs/southernOcean_CRUSOE.toml
 python clustering/fit_argo_clustering.py --config $C
-for ds in soccom socat core; do python clustering/apply_P2_classes.py --config $C --dataset $ds; done
+python clustering/apply_P2_classes.py --config $C --datasets soccom socat core
 python regression/regression-input-prep.py --config $C
 ```
 
@@ -59,7 +58,7 @@ You can change a fit in two ways:
   ```bash
   V="--n-gmm 7 --dbar-limit 900"                  # -> pcm pc8_gmm7_dbar900
   python clustering/fit_argo_clustering.py --config $C $V
-  for ds in soccom socat core; do python clustering/apply_P2_classes.py --config $C --dataset $ds $V; done
+  python clustering/apply_P2_classes.py --config $C --datasets soccom socat core $V
   python regression/regression-input-prep.py --config $C $V
   python model-optimization/run_dask_nested_cv.py RFR rfr_test --config $C $V   # reads that fit's csv and reg_info
   ```

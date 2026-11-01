@@ -113,6 +113,29 @@ def add_pcm_args(p):
     return p
 
 
+def add_skip_arg(p):
+    """--skip-existing: skip outputs that already exist instead of stopping (for chained runs, e.g.
+    the pixi tasks, so a rerun picks up where it stopped). Scripts that take it use Run.skip()."""
+    p.add_argument('--skip-existing', action='store_true',
+                   help='Skip outputs that already exist instead of stopping (--overwrite replaces them)')
+    return p
+
+
+def add_datasets_arg(p, choices=('core', 'bgc'), example=None):
+    """--datasets: one or more datasets, run in the order given; datasets(args) returns them
+    without repeats. choices=None takes any name. (argparse also takes --dataset, as an abbreviation.)"""
+    example = example or ' '.join(choices)
+    names = f'of {", ".join(choices)}' if choices else 'dataset names'
+    p.add_argument('--datasets', nargs='+', choices=choices, required=True,
+                   help=f'One or more {names}, run in this order (e.g. --datasets {example})')
+    return p
+
+
+def datasets(args):
+    """args.datasets without repeats, in the order given."""
+    return list(dict.fromkeys(args.datasets))
+
+
 def start(args, script):
     """Load the config named in args, check it against the run folder copy, and return a Run."""
     return Run(args.config, script, args=args)
@@ -204,6 +227,7 @@ class Run:
         self.args = args
         self.overwrite = getattr(args, 'overwrite', False)
         self.out_dir = getattr(args, 'out_dir', None)
+        self.skip_existing = getattr(args, 'skip_existing', False)
         self.inputs, self.outputs = [], []
         self.started = datetime.now()
 
@@ -339,12 +363,32 @@ class Run:
             files['mbl'] = self.input('mbl')
         return files
 
-    def output(self, key, dataset=None, **fmt):
-        """Path to write an output to; stops if it exists (unless --overwrite) and makes its folder.
-        With --out-dir, the file keeps its name but goes to that folder."""
+    def output_path(self, key, dataset=None, **fmt):
+        """Where output() would write, without any checks (with --out-dir, the file keeps its name
+        but goes to that folder)."""
         p = self.path(key, dataset, **fmt)
         if self.out_dir:
             p = os.path.join(os.path.abspath(self.out_dir), os.path.basename(p))
+        return p
+
+    def skip(self, keys, dataset=None, **fmt):
+        """With --skip-existing, True (and says so) if the outputs [files] keys for this dataset and
+        fmt all exist, so the caller skips making them; otherwise False."""
+        if not self.skip_existing or self.overwrite:
+            return False
+        paths = [self.output_path(k, dataset, **fmt) for k in keys]
+        if all(os.path.exists(p) for p in paths):
+            print('Skipping (already exists): ' + ', '.join(os.path.basename(p) for p in paths))
+            return True
+        return False
+
+    def nothing_to_do(self):
+        print('Nothing to do: every output already exists (--skip-existing)')
+
+    def output(self, key, dataset=None, **fmt):
+        """Path to write an output to; stops if it exists (unless --overwrite) and makes its folder.
+        With --out-dir, the file keeps its name but goes to that folder."""
+        p = self.output_path(key, dataset, **fmt)
         if os.path.exists(p) and not self.overwrite:
             raise SystemExit(f'Output exists, pass --overwrite to replace it: {p}')
         os.makedirs(os.path.dirname(p), exist_ok=True)

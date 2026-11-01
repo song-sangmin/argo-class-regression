@@ -1,6 +1,6 @@
 """Create the synthetic core Argo application dataset: GMM classes for the synthetic core P1 profiles.
 
-Synthetic counterpart of clustering/apply_P2_classes.py --dataset core: the file the trained models are
+Synthetic counterpart of clustering/apply_P2_classes.py --datasets core: the file the trained models are
 applied to in the synthetic experiment. Uses a PCM_finder fitted on the synthetic L3 profiles with
 clustering/fit_argo_clustering.py and the shared steps in clustering/p2_classes.py:
     Each synthetic core profile (platform 'synCoreArgo') takes the class probabilities of its own

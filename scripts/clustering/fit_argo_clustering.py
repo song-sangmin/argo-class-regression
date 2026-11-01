@@ -75,7 +75,7 @@ def read_fit_profiles(sources, dbar_limit):
 
 
 def main():
-    parser = pipeline.add_pcm_args(pipeline.parser(__doc__))
+    parser = pipeline.add_skip_arg(pipeline.add_pcm_args(pipeline.parser(__doc__)))
     parser.add_argument('--save-model', action='store_true',
                         help='Also save the fitted model ([files] P2_model) to classify other profiles later')
     args = parser.parse_args()
@@ -84,6 +84,8 @@ def main():
     n_pca, n_gmm, dbar_limit = p2['n_pca'], p2['n_gmm'], p2['dbar_limit']
     exclude_years = sorted(p2.get('exclude_years') or [])
     datasets = p2.get('fit_datasets', ['core', 'bgc'])
+    if run.skip(['P2_finder', 'P2_fit'] + (['P2_model'] if args.save_model else [])):
+        return run.nothing_to_do()
     sources = [(ds, run.input('L3_data', ds), run.input('L3_index', ds)) for ds in datasets]
     finder_file, fit_file = run.output('P2_finder'), run.output('P2_fit')
     model_file = run.output('P2_model') if args.save_model else None

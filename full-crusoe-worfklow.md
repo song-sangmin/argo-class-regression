@@ -9,25 +9,23 @@ or copy the config with a new `[run] name` to build a separate run.
 C=../configs/southernOcean_CRUSOE.toml
 
 # L0-L3 floats
-python data-processing/create_L0_raw_argo.py  --config $C --dataset core          # GDAC snapshot (/Volumes/ocean-repo)
-python data-processing/create_L0_raw_argo.py  --config $C --dataset bgc           # ERDDAP (changes daily)
-python data-processing/create_L1_QC_argo.py   --config $C --dataset core
-python data-processing/create_L1_QC_argo.py   --config $C --dataset bgc
-python data-processing/create_L2_masked_argo.py --config $C --dataset core
-python data-processing/create_L2_masked_argo.py --config $C --dataset bgc
+python data-processing/create_L0_raw_argo.py  --config $C --datasets core         # GDAC snapshot (/Volumes/ocean-repo)
+python data-processing/create_L0_raw_argo.py  --config $C --datasets bgc          # ERDDAP (changes daily)
+python data-processing/create_L1_QC_argo.py   --config $C --datasets core bgc
+python data-processing/create_L2_masked_argo.py --config $C --datasets core bgc
 python data-processing/create_L3_gridded_coreArgo.py --config $C
 python data-processing/create_L3_gridded_bgcArgo.py  --config $C
 
 # P1 features (SOCCOM instead of BGC float profiles)
 python data-processing/create_mbl_co2_dataset.py --config $C
 python data-processing/create_L2_resampled_masked_socat.py --config $C
-python data-processing/create_P1_float_features.py --config $C --dataset core
+python data-processing/create_P1_float_features.py --config $C --datasets core
 python data-processing/create_P1_soccom_features.py --config $C
 python data-processing/create_P1_socat_features.py  --config $C
 
 # P2 clustering and regression inputs (clustering/README.md)
 python clustering/fit_argo_clustering.py --config $C
-for ds in soccom socat core; do python clustering/apply_P2_classes.py --config $C --dataset $ds; done
+python clustering/apply_P2_classes.py --config $C --datasets soccom socat core
 python regression/regression-input-prep.py --config $C       # trainval 2014-2023, test 2024, application csvs
 
 # Model optimization on NERSC (model-optimization/README.md); the sbatch scripts set ARGOCLARE_MACHINE=nersc

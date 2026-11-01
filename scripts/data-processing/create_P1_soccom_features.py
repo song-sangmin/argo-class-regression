@@ -16,7 +16,7 @@ Replaces the feature steps of 1.2_P1_bgcArgo_feature_prep.ipynb, one row per SOC
        samples are dropped in P2, when every training sample must have a class.
 prof_datetag (wmoid_YYYYMMDDHH) is kept from the SOCCOM sample time.
 Writes [files] P1_soccom, one netcdf along 'sample' (longitude -180 to 180), with platform
-'bgcArgo'. This is the CRUSOE training data; create_P1_float_features.py --dataset bgc makes
+'bgcArgo'. This is the CRUSOE training data; create_P1_float_features.py --datasets bgc makes
 the general P1 for BGC float profiles.
 
 Usage:

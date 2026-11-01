@@ -2,7 +2,7 @@
 
 This guide runs the whole pipeline on a small example: five years (2018–2022) of core and BGC Argo
 floats in the Drake Passage (70°W–50°W, 65°S–55°S, 0–1000 dbar). The whole run, from download to
-models, takes ~5 minutes on a laptop. The example clusters all float profiles
+models, takes ~5-10 minutes on a laptop (dependent on download speed from ERDDAP). The example clusters all float profiles
 by their temperature and salinity structure, then trains one regression model per cluster. Each
 model predicts surface **oxygen** on BGC floats from **CT, SA and max_solar_rad** (clear-sky
 solar radiation), and the trained models are applied to the core floats, which have no oxygen
@@ -93,6 +93,30 @@ and rerun P1 and `apply_P2_classes.py`; the clustering fit doesn't need rerunnin
 
 ## 4. Run the pipeline
 
+**With pixi, the whole example is one command** (from the repo root):
+
+```bash
+pixi run example
+```
+
+This downloads the example data, then runs the five stages below in order. Each stage is also a
+task of its own, which takes a config (default `configs/example_drake.toml`) and, for the data
+stages, the datasets (default `"core bgc"`):
+
+| Task | Steps |
+|---|---|
+| `pixi run float-import [config] [datasets]` | L0–L3 |
+| `pixi run feature-addition [config] [datasets]` | P1 |
+| `pixi run clustering [config] [datasets]` | P2 fit and classify |
+| `pixi run regression-prep [config]` | regression inputs |
+| `pixi run modeling [config] [algorithm] [grid]` | nested CV, then the final models (application and test), both with that algorithm and grid (default `RFR rfr_test`) |
+
+For example, `pixi run float-import configs/my_region.toml bgc`. The data tasks pass
+`--skip-existing`, so outputs that already exist are skipped instead of stopping the run: after a
+failure or an interruption, rerun the same task and it picks up where it stopped. `modeling` always
+runs (its results are dated). The steps below are what the tasks run; run them by hand to change
+options or to debug one step.
+
 Run the commands from the repo root. `C` is your config.
 
 ```bash
@@ -100,27 +124,24 @@ C=configs/example_drake.toml
 ```
 
 **Floats: download, QC, open-ocean mask, regrid (L0–L3).** L0 downloads from the Ifremer ERDDAP
-server.
+server. `--datasets` is required and runs the datasets in the order given; `--datasets bgc` runs
+just one.
 
 ```bash
-python scripts/data-processing/create_L0_raw_argo.py --config $C --dataset core
-python scripts/data-processing/create_L0_raw_argo.py --config $C --dataset bgc
-python scripts/data-processing/create_L1_QC_argo.py --config $C --dataset core
-python scripts/data-processing/create_L1_QC_argo.py --config $C --dataset bgc
-python scripts/data-processing/create_L2_masked_argo.py --config $C --dataset core
-python scripts/data-processing/create_L2_masked_argo.py --config $C --dataset bgc
+python scripts/data-processing/create_L0_raw_argo.py --config $C --datasets core bgc
+python scripts/data-processing/create_L1_QC_argo.py --config $C --datasets core bgc
+python scripts/data-processing/create_L2_masked_argo.py --config $C --datasets core bgc
 python scripts/data-processing/create_L3_gridded_coreArgo.py --config $C
 python scripts/data-processing/create_L3_gridded_bgcArgo.py --config $C
 ```
 
-**Features at each profile (P1).** Each script prints the features it adds and the gridded files it
-reads. With CO2 features or target (`mbl_txt` above), first combine the NOAA text file(s) into
+**Features at each profile (P1).** For each dataset, the script prints the features it adds and
+the gridded files it reads. With CO2 features or target (`mbl_txt` above), first combine the NOAA text file(s) into
 one netcdf with `python scripts/data-processing/create_mbl_co2_dataset.py --config $C`; the
 example doesn't need it.
 
 ```bash
-python scripts/data-processing/create_P1_float_features.py --config $C --dataset core
-python scripts/data-processing/create_P1_float_features.py --config $C --dataset bgc
+python scripts/data-processing/create_P1_float_features.py --config $C --datasets core bgc
 ```
 
 **Clustering (P2).** The fit uses core and BGC profiles together (`[P2] fit_datasets`). Classify
@@ -128,8 +149,7 @@ then writes one file per platform with class probabilities and assignments.
 
 ```bash
 python scripts/clustering/fit_argo_clustering.py --config $C
-python scripts/clustering/apply_P2_classes.py --config $C --dataset core
-python scripts/clustering/apply_P2_classes.py --config $C --dataset bgc
+python scripts/clustering/apply_P2_classes.py --config $C --datasets core bgc
 ```
 
 **Regression inputs.** This step:
@@ -153,7 +173,7 @@ Run these from `scripts/model-optimization/`; the optional argument `rfr_test` i
 ```bash
 cd scripts/model-optimization
 python run_dask_nested_cv.py RFR rfr_test --config ../../$C
-python run_model_application.py --config ../../$C
+python run_model_application.py --config ../../$C --algorithm RFR --grid rfr_test
 cd ../..
 ```
 
@@ -162,7 +182,10 @@ the target, the features and the folds. (Example uses 5 outer, 2 inner folds. De
 
 **Model testing and application.**
 
-The application step tunes each cluster's final model on the `rfr_full` grid.
+The application step tunes each cluster's final model on the grid given by `--algorithm` and `--grid`
+(here `RFR rfr_test`, as in the nested CV). Without them, it uses `CLUSTER_MODELS` at the top of
+`run_model_application.py` (`RFR rfr_full` for every cluster), or a `--cluster-models` json with a
+choice per cluster.
 
 The test set is used only to evaluate the final models, never to tune or calibrate them. Its
 results are in `crusoe_clusteredModel_application_testMetrics_acc<date>.csv` (RMSE, MAE and bias,
@@ -319,6 +342,9 @@ its current partitions, storage and scratch-cleaning rules.
 
 - **Test on a subset first.** Most scripts take `--years`, a subset flag (`--floats` for L1,
   `--max-profiles` for L3 and P1), and `--out-dir /tmp/test/` to write somewhere else.
+- **Rerunning after a failure:** `--skip-existing` (on the L0–P2 and regression prep scripts) skips
+  outputs that already exist, so only the missing ones are made. A file that was being written when
+  a step failed may be incomplete; delete it before rerunning. To remake an output, pass `--overwrite`.
 - **Changing settings after a run started:** the scripts refuse a config that differs from the
   run folder's copy. Use a new `[run] name`, or pass `--update-config`; the old copy is kept.
 - **Trying other clusterings** (e.g. `--n-gmm 4`) doesn't need L0–P1 again. Pass the same options

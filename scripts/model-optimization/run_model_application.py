@@ -18,6 +18,7 @@ Usage:
     python run_model_application.py
     python run_model_application.py --run-name crusoe_application_mixed --n-folds 5
     python run_model_application.py --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json
+    python run_model_application.py --config ../../configs/example_drake.toml --algorithm RFR --grid rfr_test
 """
 import argparse
 import json
@@ -87,10 +88,17 @@ def parse_args():
     parser.add_argument('--cluster-models', default=None,
                         help='JSON file of {cluster: [algorithm, grid]} from compare_algorithms.py '
                              '(default: CLUSTER_MODELS in this script)')
+    parser.add_argument('--algorithm', choices=['RFR', 'ERT', 'XGB'], default=None,
+                        help='One algorithm for every cluster, with --grid (instead of --cluster-models or CLUSTER_MODELS)')
+    parser.add_argument('--grid', default=None, help='Tuning grid in tuning_grids.py for every cluster, with --algorithm')
     parser.add_argument('--save-models', action='store_true',
                         help='Pickle the fitted final models with joblib (off by default)')
     pipeline.add_model_args(parser)
     args = parser.parse_args()
+    if (args.algorithm is None) != (args.grid is None):
+        parser.error('--algorithm and --grid go together')
+    if args.algorithm and args.cluster_models:
+        parser.error('use --algorithm/--grid or --cluster-models, not both')
     pipeline.fill_model_args(args)
     args.data = args.data or default_data
     args.application_data = args.application_data or default_application_data
@@ -110,7 +118,10 @@ def main():
     target = getattr(args, 'target', None) or var_predict
 
     # Algorithm and grid names for each cluster, from JSON if given
-    if args.cluster_models:
+    if args.algorithm:
+        cluster_model_names = {}
+        cluster_models_source = f'--algorithm {args.algorithm} --grid {args.grid}'
+    elif args.cluster_models:
         with open(args.cluster_models) as file:
             cluster_model_names = {int(classnum): tuple(choice) for classnum, choice in json.load(file).items()}
         cluster_models_source = os.path.abspath(args.cluster_models)
@@ -121,7 +132,9 @@ def main():
 
     # Check cluster setup before loading data
     n_clusters = int(pd.read_csv(args.data, index_col=0, nrows=0).columns.str.fullmatch(r'cluster\d+_prob').sum())
-    if not args.cluster_models: # CLUSTER_MODELS for the clusters in the data; RFR rfr_full for any it does not list
+    if args.algorithm:
+        cluster_model_names = {k: (args.algorithm, args.grid) for k in range(1, n_clusters + 1)}
+    elif not args.cluster_models: # CLUSTER_MODELS for the clusters in the data; RFR rfr_full for any it does not list
         cluster_model_names = {k: CLUSTER_MODELS.get(k, ('RFR', 'rfr_full')) for k in range(1, n_clusters + 1)}
     cluster_model_names = {k: v for k, v in cluster_model_names.items() if k <= n_clusters}
     missing_clusters = set(range(1, n_clusters + 1)) - set(cluster_model_names)

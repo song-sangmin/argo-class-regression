@@ -1,4 +1,4 @@
-"""Create L1 QC'ed core or BGC Argo profiles from the raw (L0) Argopy files, one csv per year.
+"""Create L1 QC'ed core and/or BGC Argo profiles from the raw (L0) Argopy files, one csv per year.
 
 Same steps as 0.3_coreArgo_processing.ipynb and 0.4_bgcArgo_processing.ipynb (section 3):
     1. Open the L0 profiles from create_L0_raw_argo.py (0.2_argopy_import.ipynb)
@@ -9,11 +9,11 @@ Same steps as 0.3_coreArgo_processing.ipynb and 0.4_bgcArgo_processing.ipynb (se
           core: [L1] core_qc_vars (temperature, salinity, pressure, time, position)
           bgc:  the same plus [L1] bgc_qc_vars (pH). Oxygen is kept with its QC flag but not
                 filtered (diagnostic only), so profiles without valid pH are dropped
-Writes [files] L1 for each year.
+Writes [files] L1 for each year and each of --datasets (in the order given).
 
 Usage:
-    python create_L1_QC_argo.py --config ../../configs/example.toml --dataset core
-    python create_L1_QC_argo.py --config ../../configs/example.toml --dataset bgc --years 2020 \\
+    python create_L1_QC_argo.py --config ../../configs/example.toml --datasets core bgc
+    python create_L1_QC_argo.py --config ../../configs/example.toml --datasets bgc --years 2020 \\
         --floats 5904184 5904475 --out-dir /tmp/test/
 """
 from datetime import datetime
@@ -46,8 +46,7 @@ def process_year(yr, l0_file, savefile, bgc_list, qc_vars, use_flags, floats=Non
 
 
 def main():
-    parser = pipeline.parser(__doc__)
-    parser.add_argument('--dataset', choices=['core', 'bgc'], required=True)
+    parser = pipeline.add_skip_arg(pipeline.add_datasets_arg(pipeline.parser(__doc__)))
     parser.add_argument('--years', type=int, nargs='+', default=None, help='Default: [run] years')
     parser.add_argument('--n-jobs', type=int, default=None,
                         help='Years to process in parallel (default: [L1] n_jobs; core years need a lot of memory)')
@@ -57,16 +56,22 @@ def main():
     run = pipeline.start(args, __file__)
     cfg = run.section('L1')
 
-    if args.dataset == 'core':
-        bgc_list, qc_vars = [], cfg['core_qc_vars']
-    else: # do not drop on oxygen_qc, only for diagnostic
-        bgc_list, qc_vars = cfg['bgc_vars'], cfg['core_qc_vars'] + cfg['bgc_qc_vars']
+    # bgc: do not drop on oxygen_qc, only for diagnostic
+    qc_vars = {dataset: cfg['core_qc_vars'] + ([] if dataset == 'core' else cfg['bgc_qc_vars'])
+               for dataset in pipeline.datasets(args)}
+    jobs = {dataset: [(yr, run.input('L0_profiles', dataset, yr=yr), run.output('L1', dataset, yr=yr))
+                      for yr in run.years() if not run.skip(['L1'], dataset, yr=yr)]
+            for dataset in qc_vars} # every input and output checked before any processing
+    jobs = {dataset: dataset_jobs for dataset, dataset_jobs in jobs.items() if dataset_jobs}
+    if not jobs:
+        return run.nothing_to_do()
 
-    jobs = [(yr, run.input('L0_profiles', args.dataset, yr=yr), run.output('L1', args.dataset, yr=yr))
-            for yr in run.years()]
-    Parallel(n_jobs=args.n_jobs or cfg.get('n_jobs', 1))(
-        delayed(process_year)(yr, l0_file, savefile, bgc_list, qc_vars, cfg['use_flags'], args.floats)
-        for yr, l0_file, savefile in jobs)
+    for dataset, dataset_jobs in jobs.items():
+        bgc_list = [] if dataset == 'core' else cfg['bgc_vars']
+        print(f'===> {dataset}')
+        Parallel(n_jobs=args.n_jobs or cfg.get('n_jobs', 1))(
+            delayed(process_year)(yr, l0_file, savefile, bgc_list, qc_vars[dataset], cfg['use_flags'], args.floats)
+            for yr, l0_file, savefile in dataset_jobs)
     run.finish(qc_vars=qc_vars, use_flags=cfg['use_flags'])
 
 

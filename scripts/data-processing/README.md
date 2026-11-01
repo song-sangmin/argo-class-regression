@@ -24,18 +24,18 @@ for `delta_pco2`. `create_mbl_co2_dataset.py` is only needed when the MBL CO2 is
 
 | Stage | Script | `[files]` key |
 |---|---|---|
-| L0 raw Argo | `create_L0_raw_argo.py --dataset core\|bgc` | `L0_profiles`, `L0_index` |
-| L1 QC | `create_L1_QC_argo.py --dataset core\|bgc` | `L1` |
-| L2 open ocean | `create_L2_masked_argo.py --dataset core\|bgc` | `L2` |
+| L0 raw Argo | `create_L0_raw_argo.py --datasets core bgc` | `L0_profiles`, `L0_index` |
+| L1 QC | `create_L1_QC_argo.py --datasets core bgc` | `L1` |
+| L2 open ocean | `create_L2_masked_argo.py --datasets core bgc` | `L2` |
 | L3 regridded | `create_L3_gridded_coreArgo.py`, `create_L3_gridded_bgcArgo.py` | `L3_data`, `L3_index` |
 | MBL CO2 (if needed) | `create_mbl_co2_dataset.py` | `mbl` |
-| P1 float features | `create_P1_float_features.py --dataset core\|bgc` | `P1_core`, `P1_bgc` |
+| P1 float features | `create_P1_float_features.py --datasets core bgc` | `P1_core`, `P1_bgc` |
 | P1 SOCCOM (optional) | `create_P1_soccom_features.py` | `P1_soccom` |
 | L2 SOCAT (optional) | `create_L2_resampled_masked_socat.py` | `socat_L2` |
 | P1 SOCAT (optional) | `create_P1_socat_features.py` | `P1_socat` |
 
 The CRUSOE run uses the SOCCOM surface averages (`P1_soccom`) for its BGC training data, so it
-does not run `create_P1_float_features.py --dataset bgc`.
+does not run `create_P1_float_features.py --datasets bgc`.
 
 Each run has a folder, `<data_root>/<name>/` (or `[run] run_dir`), holding:
 - `config.toml`: a copy of the config made by the first script run. A later run with different

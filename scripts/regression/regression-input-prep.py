@@ -150,7 +150,7 @@ def find_sea_ice_clusters(df, n_clusters, threshold, min_profiles):
 
 
 def main():
-    parser = pipeline.add_pcm_args(pipeline.parser(__doc__))
+    parser = pipeline.add_skip_arg(pipeline.add_pcm_args(pipeline.parser(__doc__)))
     parser.add_argument('--from-splits', action='store_true',
                         help='Make the csvs from the existing [files] P2_trainval, P2_test and P2_application '
                              'instead of the train P2 datasets; csvs that already exist are kept (unless --overwrite)')
@@ -160,6 +160,11 @@ def main():
     feat_list = [f for f in cfg['features'] if f not in cfg.get('drop_features', [])]
     target = cfg.get('target', 'delta_pco2')
     splits = [('trainval', cfg['trainval_years'])] + ([('test', cfg['test_years'])] if cfg.get('test_years') else [])
+    # reg_info is written last, so with the split parquets it marks a finished run
+    finished = ['reg_info'] + ([] if args.from_splits else [f'P2_{name}' for name, _ in splits]
+                               + (['P2_application'] if cfg.get('application') else []))
+    if run.skip(finished):
+        return run.nothing_to_do()
 
     if args.from_splits:
         # ===== 1-2. Existing year splits and application set

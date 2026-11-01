@@ -88,12 +88,15 @@ def main():
     parser.add_argument('--n-jobs', type=int, default=None, help='Parallel workers for regridding (default: [L3] n_jobs)')
     parser.add_argument('--max-profiles', type=int, default=None,
                         help='Only regrid the first N profiles of each year (for testing)')
+    pipeline.add_skip_arg(parser)
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
     cfg = run.section('L3')
     years, ref_time = run.years(), run.ref_time
     bgc_list = []
     n_jobs = args.n_jobs or cfg.get('n_jobs', 1)
+    if run.skip(['L3_data', 'L3_index'], 'core'):
+        return run.nothing_to_do()
     data_file, index_file = run.output('L3_data', 'core'), run.output('L3_index', 'core')
     l0_source = run.section('L0.core').get('description', '')
 

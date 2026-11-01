@@ -71,7 +71,7 @@ n_jobs = 4
 # features = [...]                 # extra P1 columns; the [regression] features and target (here all
                                    # gridded inputs) are always added (see example.toml)
 
-[P1.core]                          # create_P1_float_features.py --dataset core
+[P1.core]                          # create_P1_float_features.py --datasets core
 years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
 
 [P1.soccom]                        # create_P1_soccom_features.py (CRUSOE uses SOCCOM, not P1 bgc floats)

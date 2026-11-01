@@ -1,4 +1,4 @@
-"""Create L2 open ocean profile indexes from the L1 QC'ed core or BGC Argo profiles, one file per year.
+"""Create L2 open ocean profile indexes from the L1 QC'ed core and/or BGC Argo profiles, one file per year.
 
 Same steps as 0.3_coreArgo_processing.ipynb and 0.4_bgcArgo_processing.ipynb ("Before
 interpolation, bathymetry"):
@@ -8,13 +8,13 @@ interpolation, bathymetry"):
        for each profile and keep profiles where elevation < [L2] bathy_lim, with argoclare's
        get_bathymetry_DS()
     3. Drop the T/S/P QC flags and errors, and save as a Dataset along profid
-Writes [files] L2 for each year.
+Writes [files] L2 for each year and each of --datasets (in the order given).
 Bathymetry masking runs before the L3 regridding because it is slow over many profiles; the
 L3 scripts (create_L3_gridded_*.py) keep only the L1 profiles listed in these indexes.
 
 Usage:
-    python create_L2_masked_argo.py --config ../../configs/example.toml --dataset core
-    python create_L2_masked_argo.py --config ../../configs/example.toml --dataset bgc --out-dir /tmp/test/
+    python create_L2_masked_argo.py --config ../../configs/example.toml --datasets core bgc
+    python create_L2_masked_argo.py --config ../../configs/example.toml --datasets bgc --out-dir /tmp/test/
 """
 import os
 from datetime import datetime
@@ -39,20 +39,22 @@ def first_by_profid(path, chunksize=5_000_000):
 
 
 def main():
-    parser = pipeline.parser(__doc__)
-    parser.add_argument('--dataset', choices=['core', 'bgc'], required=True)
+    parser = pipeline.add_skip_arg(pipeline.add_datasets_arg(pipeline.parser(__doc__)))
     parser.add_argument('--years', type=int, nargs='+', default=None, help='Default: [run] years')
     args = parser.parse_args()
     run = pipeline.start(args, __file__)
     bathy_lim = run.section('L2')['bathy_lim']
-    label = 'Core' if args.dataset == 'core' else 'bgc'
-    title = f'{label} profiles with valid QC data, masked to open ocean bathymetry where elevation < {bathy_lim:g}m'
 
-    jobs = [(yr, run.input('L1', args.dataset, yr=yr), run.output('L2', args.dataset, yr=yr))
-            for yr in run.years()]
+    # Every input and output checked before any processing
+    jobs = [(dataset, yr, run.input('L1', dataset, yr=yr), run.output('L2', dataset, yr=yr))
+            for dataset in pipeline.datasets(args) for yr in run.years() if not run.skip(['L2'], dataset, yr=yr)]
+    if not jobs:
+        return run.nothing_to_do()
     bathy_nc = xr.open_dataset(run.input('bathy')).elevation
-    for yr, l1_file, savefile in jobs:
-        print(f'===> Processing {yr} {args.dataset}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
+    for dataset, yr, l1_file, savefile in jobs:
+        label = 'Core' if dataset == 'core' else 'bgc'
+        title = f'{label} profiles with valid QC data, masked to open ocean bathymetry where elevation < {bathy_lim:g}m'
+        print(f'===> Processing {yr} {dataset}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
         plat_index = first_by_profid(l1_file)
         INDEX = mod_ocean.get_bathymetry_DS(plat_index, bathy_nc=bathy_nc, dropvars=droplist,
                                             bathy_lim=bathy_lim,

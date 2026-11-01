@@ -55,7 +55,7 @@ surface_max = 25
 bgc_vars = ["pH"]
 n_jobs = 4
 
-# %% P1: regression features (create_P1_float_features.py --dataset core|bgc)
+# %% P1: regression features (create_P1_float_features.py --datasets core bgc)
 [P1]
 n_jobs = 1
 # Columns P1 adds, beyond the [regression] features and target (always added). List features you

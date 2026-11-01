@@ -20,6 +20,54 @@ cmd = "python scripts/model-optimization/run_dask_nested_cv.py RFR rfr_test --da
 description = "Run a minimal example"
 depends-on = ["get-example-data"]
 
+# Pipeline stages (example-workflow-drake.md): pixi run <task> [config] [datasets]
+# e.g. pixi run float-import configs/my_region.toml "core bgc". Each step runs with
+# --skip-existing, so a rerun skips finished outputs and picks up where the last one stopped.
+[tasks.float-import]
+description = "L0-L3: download, QC, open-ocean mask and regrid the Argo floats"
+args = [{ arg = "config", default = "configs/example_drake.toml" }, { arg = "datasets", default = "core bgc" }]
+cmd = """
+python scripts/data-processing/create_L0_raw_argo.py --config {{ config }} --datasets {{ datasets }} --skip-existing &&
+python scripts/data-processing/create_L1_QC_argo.py --config {{ config }} --datasets {{ datasets }} --skip-existing &&
+python scripts/data-processing/create_L2_masked_argo.py --config {{ config }} --datasets {{ datasets }} --skip-existing
+{%- if "core" in datasets %} &&
+python scripts/data-processing/create_L3_gridded_coreArgo.py --config {{ config }} --skip-existing
+{%- endif %}{% if "bgc" in datasets %} &&
+python scripts/data-processing/create_L3_gridded_bgcArgo.py --config {{ config }} --skip-existing
+{%- endif %}
+"""
+
+[tasks.feature-addition]
+description = "P1: regression features at each float profile"
+args = [{ arg = "config", default = "configs/example_drake.toml" }, { arg = "datasets", default = "core bgc" }]
+cmd = "python scripts/data-processing/create_P1_float_features.py --config {{ config }} --datasets {{ datasets }} --skip-existing"
+
+[tasks.clustering]
+description = "P2: fit the profile clustering and classify each dataset"
+args = [{ arg = "config", default = "configs/example_drake.toml" }, { arg = "datasets", default = "core bgc" }]
+cmd = """
+python scripts/clustering/fit_argo_clustering.py --config {{ config }} --skip-existing &&
+python scripts/clustering/apply_P2_classes.py --config {{ config }} --datasets {{ datasets }} --skip-existing
+"""
+
+[tasks.regression-prep]
+description = "Training, test and application csvs for the models"
+args = [{ arg = "config", default = "configs/example_drake.toml" }]
+cmd = "python scripts/regression/regression-input-prep.py --config {{ config }} --skip-existing"
+
+[tasks.modeling]
+description = "Nested CV (errors per cluster), then train, apply and test the final models, all with the same algorithm and grid"
+args = [{ arg = "config", default = "configs/example_drake.toml" }, { arg = "algorithm", default = "RFR" },
+        { arg = "grid", default = "rfr_test" }]
+cmd = """
+python scripts/model-optimization/run_dask_nested_cv.py {{ algorithm }} {{ grid }} --config {{ config }} &&
+python scripts/model-optimization/run_model_application.py --config {{ config }} --algorithm {{ algorithm }} --grid {{ grid }}
+"""
+
+[tasks.example]
+description = "The whole Drake Passage example (example-workflow-drake.md), about 5 min"
+depends-on = ["get-example-data", "float-import", "feature-addition", "clustering", "regression-prep", "modeling"]
+
 [dependencies]
 python = ">=3.15.0,<3.16"
 numpy = ">=2.5.4,<3"

@@ -1,4 +1,4 @@
-"""Create a P2 dataset: the GMM classes of each sample in a P1 dataset (core, bgc, soccom, socat, ...).
+"""Create P2 datasets: the GMM classes of each sample in one or more P1 datasets (core, bgc, soccom, socat, ...).
 
 Replaces the class assignment and gap filling of 2.2_PCM_classify_P1processed_bgcArgo_socat.ipynb,
 using the [files] P2_finder from fit_argo_clustering.py and the shared steps in p2_classes.py.
@@ -18,14 +18,14 @@ Nothing else is dropped: the training/test split, the exclusion of training prof
 application set, and missing targets or features are left to regression/regression-input-prep.py.
 Adds platform ([P2.platform] <dataset>, else the P1 platform column), platform_id (wmoid or
 cruiseid), sample_id (prof_datetag or sample_datetag), and the class columns from p2_classes.py,
-after all P1 columns (in the P1 order). Writes [files] P2_<dataset>, one parquet file with one
-row per sample (run parameters, inputs and counts in df.attrs after pd.read_parquet).
+after all P1 columns (in the P1 order). Writes [files] P2_<dataset> for each of --datasets (in the
+order given; every input and output is checked first), one parquet file with one row per sample
+(run parameters, inputs and counts in df.attrs after pd.read_parquet).
 
 Usage:
-    python apply_P2_classes.py --config ../../configs/southernOcean_CRUSOE.toml --dataset soccom
-    python apply_P2_classes.py --config ../../configs/southernOcean_CRUSOE.toml --dataset socat
-    python apply_P2_classes.py --config ../../configs/southernOcean_CRUSOE.toml --dataset core
-    python apply_P2_classes.py --config ../../configs/southernOcean_CRUSOE.toml --dataset core --n-gmm 7   # another fit
+    python apply_P2_classes.py --config ../../configs/example.toml --datasets core bgc
+    python apply_P2_classes.py --config ../../configs/southernOcean_CRUSOE.toml --datasets soccom socat core
+    python apply_P2_classes.py --config ../../configs/southernOcean_CRUSOE.toml --datasets core --n-gmm 7   # another fit
 """
 import os
 from datetime import datetime
@@ -45,23 +45,15 @@ def read_p1(path):
     return df
 
 
-def main():
-    parser = pipeline.add_pcm_args(pipeline.parser(__doc__))
-    parser.add_argument('--dataset', required=True, help='P1 dataset to classify (core, bgc, soccom, socat, ...)')
-    parser.add_argument('--float-days', type=float, default=None, help='Float gap-fill window (default: [P2] float_gapfill_days)')
-    parser.add_argument('--ship-days', type=float, default=None, help='Ship gap-fill window (default: [P2] ship_gapfill_days)')
-    args = parser.parse_args()
-    run = pipeline.start(args, __file__)
+def classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, savefile):
+    """Classify the samples of one P1 dataset and save [files] P2_<dataset>; returns the counts."""
     p2 = run.p2
-    finder_file, p1_file = run.input('P2_finder'), run.input('P1', args.dataset)
-    savefile = run.output('P2', args.dataset)
-
-    finder, prob_cols, meta = p2_classes.read_finder(finder_file)
+    print(f'===> {dataset}: {p1_file}')
     df = read_p1(p1_file)
     ship = 'nearest_profid' in df.columns
-    if args.dataset in run.section('P2.platform'):
-        df['platform'] = run.section('P2.platform')[args.dataset]
-    label = f'{args.dataset} ({df["platform"].iloc[0] if len(df) else ""})'
+    if dataset in run.section('P2.platform'):
+        df['platform'] = run.section('P2.platform')[dataset]
+    label = f'{dataset} ({df["platform"].iloc[0] if len(df) else ""})'
 
     if ship:
         days = args.ship_days or p2.get('ship_gapfill_days', 1.5)
@@ -78,12 +70,13 @@ def main():
         how = f'from the same float within {days:g} days'
     n = len(df)
     df = p2_classes.drop_unclassified(df, label, n_matched, n_filled, how)
+    counts = {'samples': n, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n - len(df)}
 
     datetag = datetime.now().strftime('%Y%m%d')
     years = df['datetime'].dt.year
     yrs = f'{years.min()}-{years.max()}' if years.max() > years.min() else str(years.min())
     p2_classes.save_parquet(df, savefile, {
-        'title': f'P2 {args.dataset} dataset {yrs}: P1 samples with GMM class probabilities; '
+        'title': f'P2 {dataset} dataset {yrs}: P1 samples with GMM class probabilities; '
                  'samples without a class dropped.',
         'pcm_params': meta.get('pcm_params', run.pcm),
         'pcm_finder': os.path.basename(finder_file),
@@ -91,10 +84,32 @@ def main():
         'gapfill': f'nearest classified {"sample of the same cruise" if ship else "profile of the same float"} '
                    f'(<{days:g} d), before/after must agree',
         'p1_input': os.path.basename(p1_file),
-        'counts': {'samples': n, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n - len(df)},
+        'counts': counts,
         **run.attrs(), 'date': datetag})
-    print(f'\n{len(df)} samples -> {savefile}\n{df["class_assign"].value_counts().sort_index().to_string()}')
-    run.finish(counts={'samples': n, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n - len(df)})
+    print(f'\n{len(df)} samples -> {savefile}\n{df["class_assign"].value_counts().sort_index().to_string()}\n')
+    return counts
+
+
+def main():
+    parser = pipeline.add_pcm_args(pipeline.parser(__doc__))
+    pipeline.add_datasets_arg(parser, choices=None, example='core bgc')
+    pipeline.add_skip_arg(parser)
+    parser.add_argument('--float-days', type=float, default=None, help='Float gap-fill window (default: [P2] float_gapfill_days)')
+    parser.add_argument('--ship-days', type=float, default=None, help='Ship gap-fill window (default: [P2] ship_gapfill_days)')
+    args = parser.parse_args()
+    run = pipeline.start(args, __file__)
+
+    # Every input and output checked before any processing
+    finder_file = run.input('P2_finder')
+    jobs = [(dataset, run.input('P1', dataset), run.output('P2', dataset)) for dataset in pipeline.datasets(args)
+            if not run.skip(['P2'], dataset)]
+    if not jobs:
+        return run.nothing_to_do()
+
+    finder, prob_cols, meta = p2_classes.read_finder(finder_file)
+    counts = {dataset: classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, savefile)
+              for dataset, p1_file, savefile in jobs}
+    run.finish(counts=counts)
 
 
 if __name__ == '__main__':
