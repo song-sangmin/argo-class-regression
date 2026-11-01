@@ -13,3 +13,6 @@ x_data/
 !.pixi/config.toml
 # example data cloned by `pixi run get-example-data`
 example-data/
+
+# ruff
+.ruff_cache/
