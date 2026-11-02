@@ -28,6 +28,7 @@ import os
 from datetime import datetime, timedelta
 
 import numpy as np
+import p1_features
 import pandas as pd
 import scipy.io as sio
 import xarray as xr
@@ -36,7 +37,6 @@ from joblib import Parallel, delayed
 import argoclare.oceantools as mod_ocean
 import argoclare.preprocessing as mod_prep
 from argoclare import pipeline
-import p1_features
 
 
 def datenum_to_datetime(matlab_datenum):

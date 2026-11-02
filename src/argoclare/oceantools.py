@@ -1,12 +1,11 @@
-import os.path
+import gsw
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import xarray as xr
-from datetime import date, datetime, timedelta  # for saving figures with today's date
-import datetime
+
+# from datetime import date, datetime, timedelta  # for saving figures with today's date
 import scipy
-import gsw
-from tqdm import tqdm
+import xarray as xr
 
 # %% Time functions
 
@@ -164,7 +163,7 @@ def get_bathymetry_DS(
         .drop_vars(dropvars)
         .assign_attrs(nc_attrs)
     )
-    if save_path != None:
+    if save_path is not None:
         INDEX_DS.to_netcdf(save_path + save_tag + '.nc')
         print('Saved to ' + save_path + save_tag + '.nc' + '\n')
 
@@ -298,7 +297,7 @@ def setup_TS_contours(df, ax=None):
     # ax.scatter(anyfloat.SA, anyfloat.CT, c='r', s=2, alpha=0.5)
     """
 
-    if ax == None:
+    if ax is None:
         fig = plt.figure(figsize=(9, 7))
         ax = fig.gca()
 

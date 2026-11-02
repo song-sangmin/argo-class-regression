@@ -1,15 +1,14 @@
-from argoclare import crossvalidation
-from argoclare import regression
-import procedures_cv
-
 from datetime import datetime
-import pandas as pd
-import numpy as np
-import joblib
 
-from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
+import joblib
+import numpy as np
+import pandas as pd
+import procedures_cv
 from sklearn.base import clone
+from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
 from xgboost import XGBRegressor
+
+from argoclare import crossvalidation, regression
 
 
 def run_model_application(

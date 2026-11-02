@@ -1,22 +1,15 @@
-from argoclare import crossvalidation
-from argoclare import regression
-
-import dask
-from dask.distributed import LocalCluster, Client, wait
-import os
 from datetime import datetime
-import pandas as pd
-import numpy as np
 from itertools import product
 
-# %% Fold functions
-from sklearn.model_selection import GridSearchCV, KFold, cross_val_score
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import LeaveOneGroupOut
+import numpy as np
+import pandas as pd
 from sklearn.base import clone
-
-from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
 from xgboost import XGBRegressor
+
+from argoclare import crossvalidation, regression
+
+# %% Fold functions
 
 
 def run_dask_nested_cv(

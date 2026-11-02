@@ -1,16 +1,15 @@
-import pandas as pd
-import xarray as xr
-import numpy as np
-import PyCO2SYS as pyco2
-from solarpy import irradiance_on_plane
-import pyproj
-import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from argoclare import argotools as mod_argo
-from argoclare import oceantools as mod_ocean
 import gsw
+import numpy as np
+import pandas as pd
+import PyCO2SYS as pyco2
+import pyproj
+import xarray as xr
+from solarpy import irradiance_on_plane
 from tqdm import tqdm
+
+from argoclare import oceantools as mod_ocean
 
 root_data_folder = '/Volumes/crusoe-repo/data/'
 local_working_folder = '/Users/sangminsong/Documents/PROJECTS-PYTHON/CRUSOE-SOCarbon/x_localdata/'
@@ -355,8 +354,6 @@ def get_row_atmos_co2_ppm(row):
     result_ppm = mbl_co2.sel(decimalyr=row.decimalyr, method='nearest').interp(sin_lat=row.sin_lat)['mean'].values
     return result_ppm
 
-    return atmos_pres_Pa
-
 
 def convert_co2_ppm_to_pco2(platDF, ppm_col='atmos_co2_ppm'):
     """convert ppm to pco2 using Zeebe and Wolf-Gladrow 2001 formulation
@@ -461,7 +458,7 @@ def add_wind_speed(platDF, hours_before=None):
     for yr in tqdm(year_range):
         temp = platDF_annual[yr].copy()
 
-        if hours_before == None:
+        if hours_before is None:
             temp['wind_components'] = temp.apply(lambda row: get_row_windspeed(row, wind_dict[yr]), axis=1)
             temp['wind_speed'] = temp['wind_components'].apply(lambda x: np.sqrt(x[0] ** 2 + x[1] ** 2))
         else:  # if hours_before is not None:
@@ -474,7 +471,7 @@ def add_wind_speed(platDF, hours_before=None):
 
     platDF_added = pd.concat(platDF_annual.values(), axis=0)
 
-    if hours_before == None:
+    if hours_before is None:
         print('Added columns "wind_components", "wind_speed"')
     if hours_before is not None:
         print('Wind speed average given over past ' + str(hours_before) + ' hours')
@@ -556,7 +553,7 @@ def add_sea_ice(platDF, days_before=None):
     for yr in tqdm(year_range):
         temp = platDF_annual[yr].copy()
 
-        if days_before == None:
+        if days_before is None:
             temp['sea_ice'] = temp.apply(lambda row: get_row_seaice(row, ice_dict[yr]), axis=1)
 
         if days_before is not None:
@@ -568,7 +565,7 @@ def add_sea_ice(platDF, days_before=None):
 
     platDF_added = pd.concat(platDF_annual.values(), axis=0)
 
-    if days_before == None:
+    if days_before is None:
         print('Added column "sea_ice".')
     else:
         print('Added column ' + new_var_name)

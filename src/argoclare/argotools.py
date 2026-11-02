@@ -1,19 +1,21 @@
 # os tools
 
-import os.path
-from tqdm import tqdm
-
-import numpy as np
-import pandas as pd
-import xarray as xr
-from datetime import date, datetime, timedelta  # for saving figures with today's date
+# from datetime import date, datetime, timedelta  # for saving figures with today's date
 import datetime
+from datetime import timedelta
+
+import cartopy
+import cartopy.crs as ccrs
 import gsw
-import scipy
 
 # import mod_cremas as crx
-import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy
+import xarray as xr
+from cmocean import cm as cmo
+from tqdm import tqdm
 
 from argoclare import oceantools as myocn
 
@@ -40,7 +42,7 @@ def get_profile_DS(argoDS, profid=None):
     @ param: argoDS (dataset with unique profid's as index)
     @ return: xr Dataset
     """
-    if profid == None:
+    if profid is None:
         profid = argoDS.profid[np.random.randint(0, len(argoDS.profid))].values.astype(str).tolist()
     return argoDS.sel({'profid': profid}), profid
 
@@ -51,7 +53,7 @@ def get_wmo_DS(argoDS, wmo=None):
     @ param: argoDS (dataset with wmoid's as coordinate, profids as index)
     @ return: wmo_DS (xr Dataset), wmo (argo)
     """
-    if wmo == None:
+    if wmo is None:
         all_wmoids = argoDS.to_dataframe().wmoid.unique()
         wmo = all_wmoids[np.random.randint(0, len(all_wmoids))]
     valid_profids = [x for x in argoDS.profid.values if x.startswith(str(wmo)[:7])]
@@ -66,7 +68,7 @@ def get_wmo_DF(argoDF, wmo=None):
     @ return: wmoDF, wmo (argo)
     """
     argoDF = argoDF.reset_index().copy()
-    if wmo == None:
+    if wmo is None:
         all_wmoids = argoDF.wmoid.unique()
         wmo = all_wmoids[np.random.randint(0, len(all_wmoids))]
     valid_profids = [x for x in argoDF.profid.values if x.startswith(str(wmo)[:7])]
@@ -404,7 +406,6 @@ def calc_mlp(platDS, threshold=0.03):
             mask = prof_df.sigma0.values > dens_tofind
 
             if mask.any():  # If any values meet threshold density condition
-                idx = prof_df.sigma0.index[np.argmax(mask)]
                 (p0, d0) = (
                     prof_df.pressure[np.argmax(mask) - 1],
                     prof_df.sigma0[np.argmax(mask) - 1],
@@ -416,7 +417,7 @@ def calc_mlp(platDS, threshold=0.03):
 
             else:
                 prof_mlps.loc[id, 'mlp'] = np.nan
-        except:
+        except Exception:
             no_data.append(id)
 
     return prof_mlps, no_data
@@ -474,8 +475,9 @@ def interpolate_z_profile(
         # Separate out continuous ID's
         prof.loc[subID_index, 'marker'] = 1
         prof['continuous_id'] = prof['marker'].cumsum().ffill().fillna(0).astype(int)
-    except:
+    except Exception as e:
         # print('no data in profid' + str(prof.profid.iloc[0]))
+        print(f'Error occurred while processing profile: {e}')
         return None
 
     # Initialize interpolated DataFrame to return, with pressure as index
@@ -790,9 +792,6 @@ def colocate_to_floats(platDF, argoDS, ref_time='2014-01-01', minimize_var='km_s
 # %% Plotting
 # =============================================================================
 
-from cmocean import cm as cmo
-import cartopy
-import cartopy.crs as ccrs
 
 # Prepare for plotting histogram of profile locations
 # Longitude and latitude range
@@ -817,13 +816,13 @@ def plot_profiles_from_WMO(floatDF, var='CT', ax=None, dotsize=2, ylims=[1000, 0
     @param: floatDF: dataframe, either with 'profid' column (multiple profiles)
                     or representing a single profile
     """
-    if ax == None:
+    if ax is None:
         fig = plt.figure(figsize=(5, 8))
         ax = fig.gca()
 
     try:
         floatDF = floatDF.reset_index()
-    except:
+    except ValueError:
         pass
     if 'profid' in floatDF.columns:  # If floatDF has multiple profiles
         for name, group in floatDF.groupby('profid'):

@@ -27,17 +27,17 @@ import os
 import sys
 from datetime import datetime
 
+import create_L3_synthetic_argo as l3syn
 import numpy as np
 import pandas as pd
 import xarray as xr
 
 import argoclare.oceantools as mod_ocean
 from argoclare import pipeline
-import create_L3_synthetic_argo as l3syn
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data-processing'))
-import p1_features  # noqa: E402
 import create_P1_socat_features as socat_p1  # noqa: E402
+import p1_features  # noqa: E402
 
 socat_levels = [0, 5, 10]  # as 4.4
 surface_pressure = l3syn.surface_pressure

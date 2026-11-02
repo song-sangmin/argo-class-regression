@@ -27,12 +27,11 @@ import os
 from datetime import datetime
 
 import pandas as pd
-from dask.distributed import LocalCluster, Client
+import procedures_application
+from dask.distributed import Client, LocalCluster
+from tuning_grids import TUNING_GRIDS
 
 from argoclare import pipeline
-
-import procedures_application
-from tuning_grids import TUNING_GRIDS
 
 # ==== Standard run parameters =======
 sea_ice_clusters = [5, 6]  # default, change with --sea-ice-clusters (or from reg_info with --config)

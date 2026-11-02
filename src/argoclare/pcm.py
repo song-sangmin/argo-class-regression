@@ -1,14 +1,13 @@
 # import packages
-import numpy as np
-import xarray as xr
 import random
-from sklearn import preprocessing
-from sklearn.decomposition import PCA
-from sklearn.decomposition import KernelPCA
-from sklearn import manifold
+
+import numpy as np
 
 # from   xgcm                  import Grid
 import pandas as pd
+import xarray as xr
+from sklearn import mixture, preprocessing
+from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture as GMM
 
 
@@ -208,7 +207,6 @@ def fill_missing_float_classes(argoDF, n_gmm, days_threshold=12):
     # argoDF = argoDF.set_index('profid')
     argoDF_nona = argoDF.dropna(subset='class_assign')
     missing = argoDF[argoDF.class_assign.isna()].reset_index()
-    available_prof_datetags = argoDF_nona.prof_datetag.unique().astype(str)
     print(
         'Initially missing class assignments for '
         + str(len(missing))
@@ -330,9 +328,7 @@ def reassign_class_numbers(dataClasses_valid):
 #####################################################################
 
 # import modules
-from sklearn import mixture
-import numpy as np
-import random
+
 
 # #####################################################################
 # # Calculate BIC and AIC

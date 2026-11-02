@@ -26,7 +26,6 @@ import xarray as xr
 import argoclare.oceantools as mod_ocean
 from argoclare import pipeline
 
-
 droplist = ['temperature_qc', 'salinity_qc', 'pressure_qc', 'temp_error', 'psal_error', 'pres_error']
 
 

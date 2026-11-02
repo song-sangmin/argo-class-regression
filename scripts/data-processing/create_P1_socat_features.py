@@ -27,6 +27,7 @@ from datetime import datetime
 
 import gsw
 import numpy as np
+import p1_features
 import pandas as pd
 import PyCO2SYS as pyco2
 import xarray as xr
@@ -34,7 +35,6 @@ from joblib import Parallel, delayed
 
 import argoclare.oceantools as mod_ocean
 from argoclare import pipeline
-import p1_features
 
 ref_time = p1_features.ref_time
 

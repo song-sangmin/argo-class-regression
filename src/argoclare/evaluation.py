@@ -1,7 +1,4 @@
 import numpy as np
-import pandas as pd
-import xarray as xr
-import scipy
 
 
 def get_80_bounds(data):
@@ -34,8 +31,8 @@ def summarize_errors(platDF):
 
     # absolute percentage error
     platDF['ape'] = np.abs(platDF['val_relative_error']) * 100
-    median_ape = platDF['ape'].median()
-    mean_ape = platDF['ape'].mean()
+    # median_ape = platDF['ape'].median()
+    # mean_ape = platDF['ape'].mean()
 
     result = [
         median_abs_error,

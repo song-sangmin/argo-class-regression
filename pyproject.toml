@@ -22,3 +22,4 @@ quote-style = "single"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]   # pycodestyle errors, pyflakes, import sorting
+ignore = ["E501"]  

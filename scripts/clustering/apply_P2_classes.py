@@ -31,11 +31,11 @@ Usage:
 import os
 from datetime import datetime
 
+import p2_classes
 import pandas as pd
 import xarray as xr
 
 from argoclare import pipeline
-import p2_classes
 
 
 def read_p1(path):

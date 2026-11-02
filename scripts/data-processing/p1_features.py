@@ -22,11 +22,11 @@ since joblib workers re-import this module. Only the files that the run's featur
 used (needed_files(), from [P1] features and the [regression] features and target).
 """
 
+import gsw
 import numpy as np
 import pandas as pd
 import pyproj
 import xarray as xr
-import gsw
 
 from argoclare import oceantools as mod_ocean
 from argoclare import preprocessing as mod_prep
@@ -220,7 +220,7 @@ def save_netcdf(df, dim, path, attrs, coords=('datetime', 'latitude', 'longitude
     """Save one row per sample as a Dataset along `dim` (a column of df, or a new 0..N-1 index).
     Text columns are written as strings, with missing values as ''."""
     df = df.copy()
-    for c in df.columns[df.dtypes == object]:
+    for c in df.columns[df.dtypes == object]:  # noqa: E721
         df[c] = df[c].where(df[c].notna(), '').astype(str)
     df.columns = [c.replace(' ', '_') for c in df.columns]  # e.g. 'Potential Density_kg_m3'
     df = df.set_index(dim) if dim in df.columns else df.rename_axis(dim)

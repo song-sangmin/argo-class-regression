@@ -1,27 +1,12 @@
 # Helper functions f
-import pandas as pd
-import xarray as xr
 import numpy as np
-import scipy
-from scipy.stats import iqr
+import pandas as pd
 from sklearn.cluster import KMeans
-from sklearn.ensemble import RandomForestRegressor
-from xgboost import XGBRegressor
-from sklearn import preprocessing
-from sklearn import metrics
-from sklearn.model_selection import train_test_split
-
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics import r2_score
-
 
 # %% Fold functions
-from sklearn.model_selection import GridSearchCV, KFold, cross_val_score
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import LeaveOneGroupOut
+from sklearn.model_selection import GridSearchCV, KFold, LeaveOneGroupOut
 
 from argoclare import regression as mod_reg
-
 
 # %% Main object to store cross-validation data
 
@@ -494,9 +479,7 @@ def get_cvtainer_counts(soclass_cvtainers, n_clusters, n_outer, n_inner=None):
                 # NestedCvtainerCounts.loc[(classnum, foldnum, 'total'), 'train_counts'] = len(soclass_cvtainers[classnum].training_data[foldnum])
                 # NestedCvtainerCounts.loc[(classnum, foldnum, 'total'), 'val_counts'] = len(soclass_cvtainers[classnum].validation_data[foldnum])
 
-                inner_nest = soclass_cvtainers[classnum].inner_nests[foldnum]
                 for tuningnum in ['fold' + str(x) for x in range(1, n_inner + 1)]:
-                    tuning_data = soclass_cvtainers[classnum].inner_nests[foldnum]
                     tuning_trainDF = soclass_cvtainers[classnum].get_inner_data(foldnum, tuningnum, type='training')
                     tuning_valDF = soclass_cvtainers[classnum].get_inner_data(foldnum, tuningnum, type='validation')
 

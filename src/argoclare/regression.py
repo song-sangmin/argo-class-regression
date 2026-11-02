@@ -1,17 +1,8 @@
-import pandas as pd
-import xarray as xr
 import numpy as np
-import scipy
-import math
-from scipy.stats import iqr
-
+import pandas as pd
+from scipy import stats
 from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
-from sklearn import preprocessing
-from sklearn import metrics
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics import r2_score
 
 
 # %% Setup run tags
@@ -94,6 +85,7 @@ def find_trainval_split(floatDF, shipDF, pc_thresh=0.3, n_gmm=6):
 
     @ param     pc_thresh : proportion of float data in training and validation sets
     """
+    from argoclare.crossvalidation import subset_training_validation
 
     platDF_all = pd.concat([floatDF, shipDF], axis=0)
     trainClasses = {k: None for k in range(1, n_gmm + 1)}
@@ -124,8 +116,8 @@ def find_trainval_split(floatDF, shipDF, pc_thresh=0.3, n_gmm=6):
         trainClasses[soclass] = pd.concat([holdTrain_float, holdTrain_ship], axis=0)
         valClasses[soclass] = pd.concat([holdVal_float, holdVal_ship], axis=0)
 
-    trainClasses_float = {ind: k[~k.wmoid.isna()] for ind, k in trainClasses.items()}
-    trainClasses_ship = {ind: k[k.wmoid.isna()] for ind, k in trainClasses.items()}
+    # trainClasses_float = {ind: k[~k.wmoid.isna()] for ind, k in trainClasses.items()}
+    # trainClasses_ship = {ind: k[k.wmoid.isna()] for ind, k in trainClasses.items()}
 
     trainDF_all = pd.concat(trainClasses.values(), axis=0)
     valDF_all = pd.concat(valClasses.values(), axis=0)
@@ -319,7 +311,6 @@ def apply_cluster_RFR(
 
 # %% Calibration function s
 # originally from 3.2_kfold
-from scipy import stats
 
 
 def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var='delta_pco2', target_known=True):
@@ -434,7 +425,7 @@ def storedRuns_comparison(
         # print('\t features ', feat_options[run_tag.split('-')[0]])
 
         runResults = singleRun.weighted_validation.copy()
-        [run_median_abs_error, run_mean_abs_error, run_bias, run_rmse] = summarize_DF_errors(
+        [run_median_abs_error, run_mean_abs_error, run_bias, run_rmse] = summarize_errors(
             runResults, error_param=error_param
         )
 
@@ -547,6 +538,7 @@ def print_errors_restrictdepth(data, var='test_relative_error', pres_lim=[0, 100
     print('Restricted to depths ' + str(pres_lim[0]) + ' to ' + str(pres_lim[1]) + ':')
     print('median abs error: \t' + str(np.abs(err).median()))
     print('mean abs error \t\t' + str(np.abs(err).mean()))
+    from argoclare.evaluation import get_95_bounds
 
     # Bounds 95
     [low, high] = get_95_bounds(err)
