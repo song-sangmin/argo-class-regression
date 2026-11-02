@@ -219,9 +219,10 @@ x_data/example_drake/
 
 ```python
 from argoclare import pipeline
+
 run = pipeline.load('configs/example_drake.toml')
-run.status()                          # every file the config names, and whether it exists
-p2_bgc = run.open('P2', 'bgc')        # BGC profiles with class probabilities
+run.status()  # every file the config names, and whether it exists
+p2_bgc = run.open('P2', 'bgc')  # BGC profiles with class probabilities
 ```
 
 ## 6. Running on an HPC system

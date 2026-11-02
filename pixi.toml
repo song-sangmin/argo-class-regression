@@ -99,6 +99,7 @@ sphinx = ">=9.2.0,<10"
 pre-commit = ">=4.7.0,<5"
 nbstripout = ">=0.9.1,<0.10"
 ruff = ">=0.17.3,<0.18"
+identify = ">=2.6.15,<3"   # pre-commit needs a recent identify (jupyter file type)
 
 [feature.dev.tasks]
 format = { cmd = "ruff format src scripts", description = "Format the code with ruff (settings in pyproject.toml)" }
