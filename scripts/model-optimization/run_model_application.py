@@ -3,7 +3,9 @@ Train one final clustered model and apply it to coreArgo data.
 
 For each cluster, tunes hyperparameters on --n-folds.
 Fits calibration coefficients from out-of-fold predictions before
-fitting a final model on all of that cluster's data.
+fitting a final model on all of that cluster's data. With --calibration insample, the
+coefficients are instead fitted on the final models' predictions on all of trainval
+(procedures_application_alternate.py).
 
 The 6 class models are applied (weighted by cluster probabilities)
 to add cluster{k}_pred, weighted_pred, cluster{k}_calpred and lincal_pred.
@@ -19,6 +21,7 @@ Usage:
     python run_model_application.py --run-name crusoe_application_mixed --n-folds 5
     python run_model_application.py --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json
     python run_model_application.py --config ../../configs/example_drake.toml --algorithm RFR --grid rfr_test
+    python run_model_application.py --config ../../configs/example_drake.toml --algorithm RFR --grid rfr_test --calibration insample
 """
 
 import argparse
@@ -28,6 +31,7 @@ from datetime import datetime
 
 import pandas as pd
 import procedures_application
+import procedures_application_alternate
 from dask.distributed import Client, LocalCluster
 from tuning_grids import TUNING_GRIDS
 
@@ -142,6 +146,13 @@ def parse_args():
         '--grid', default=None, help='Tuning grid in tuning_grids.py for every cluster, with --algorithm'
     )
     parser.add_argument(
+        '--calibration',
+        choices=['oof', 'insample'],
+        default='oof',
+        help='oof (default): calibrate on out-of-fold predictions within trainval (procedures_application.py); '
+        "insample: on the final models' predictions on all trainval (procedures_application_alternate.py)",
+    )
+    parser.add_argument(
         '--save-models', action='store_true', help='Pickle the fitted final models with joblib (off by default)'
     )
     pipeline.add_model_args(parser)
@@ -227,7 +238,7 @@ def main():
 
     for classnum, (algorithm, grid) in sorted(cluster_model_names.items()):
         print(f'Cluster {classnum}: {algorithm}, grid: {grid} = {TUNING_GRIDS[grid]}')
-    print(f'Tuning folds: {args.n_folds}, run name: {args.run_name}')
+    print(f'Tuning folds: {args.n_folds}, calibration: {args.calibration}, run name: {args.run_name}')
     print(f'Features: {run_feat_list}, target: {target}, sea ice clusters: {args.sea_ice_clusters}')
 
     with (
@@ -238,7 +249,8 @@ def main():
     ):
         print(client)
         print('Starting dask training: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
-        procedures_application.run_model_application(
+        procedures = procedures_application_alternate if args.calibration == 'insample' else procedures_application
+        procedures.run_model_application(
             client,
             trainval_data,
             application_data,
