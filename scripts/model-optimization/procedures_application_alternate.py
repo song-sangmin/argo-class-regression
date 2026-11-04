@@ -5,8 +5,8 @@ coefficients are fitted differently:
     procedures_application.py: out-of-fold predictions within trainval (one model per fold)
     this file:                 the final models' predictions on all of trainval (the data
                                they were trained on)
-For each cluster, the slope and intercept are fitted to the decile means of weighted_pred
-vs the target, over all of that cluster's trainval samples, as in procedures_cv.py. They are
+For each cluster k, the slope and intercept are fitted to the decile means of cluster{k}_pred
+vs the target, over all of that cluster's trainval samples. They are
 stored with the final model (final_CMV.cal_coeffs, and the joblib file with --save-models)
 and applied to the final model's predictions on the application and test data.
 """
@@ -161,7 +161,9 @@ def run_model_application(
         target_var=var_predict,
         sea_ice_clusters=sea_ice_clusters,
     )
-    cal_coeffs = regression.get_clustered_calibration_coeffs(trainval_predictions, target_var=var_predict)
+    cal_coeffs = regression.get_clustered_calibration_coeffs(
+        trainval_predictions, target_var=var_predict, pred_col='cluster{k}_pred'
+    )
     final_CMV.cal_coeffs = cal_coeffs  # stored with the final model
 
     ###################
@@ -243,7 +245,10 @@ def run_model_application(
         file.write('N_FOLDS: ' + str(n_folds) + '\n')
         file.write('CV_TYPE: ' + cv_type + '\n')
         file.write('TUNING_SCORE_METRIC: ' + scoring_metric + '\n')
-        file.write('CALIBRATION: final model predictions on all trainval data (procedures_application_alternate.py)\n')
+        file.write(
+            'CALIBRATION: cluster{k}_pred decile fit on final model predictions on all trainval data '
+            '(procedures_application_alternate.py)\n'
+        )
         file.write('CLUSTER_MODELS_SOURCE: ' + str(cluster_models_source) + '\n')
         file.write('N_TRAINVAL: ' + str(len(trainval_data)) + '\n')
         file.write('N_APPLICATION: ' + str(len(application_data)) + '\n')

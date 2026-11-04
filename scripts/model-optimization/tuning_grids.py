@@ -30,6 +30,6 @@ TUNING_GRIDS = {
     },
     'xgb_test': {'eta': [0.01, 0.05], 'max_depth': [2, 3]},
     # ===== MLR =====
-    # Multiple linear regression: no hyperparameters, so no inner CV (n_inner is ignored)
+    # Multiple linear regression: no hyperparameters, so no inner tuning (inner folds only calibrate)
     'mlr': {},
 }

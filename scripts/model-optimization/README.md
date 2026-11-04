@@ -17,7 +17,7 @@ Or debug with shorter version `sbatch -J RFR_test -q debug -t 00:10:00 submit_ne
 Options before submit_nested_cv.sbatch go to Slurm (-t, -q)
 Anything after the grid name goes to the Python script (--run-name, --n-outer, --n-workers and so on). 
 
-**Outputs** (in `--savepath`): `<run name>_outercvErrors`, `_innerScores`, `_bestParams` and `_runDescription`, each `_acc<date>`. The calibrated columns of `_outercvErrors` (`cluster{k}_calpred`, `lincal_pred`, `calibrated_error`) correct each outer fold's predictions with one slope and intercept per cluster, fitted on that outer fold's validation rows. They describe how well a fold's predictions can be corrected after the fact, not errors on unseen data; use the uncalibrated errors (`weighted_pred`, `val_error`) for that. `run_model_application.py` calibrates differently: on out-of-fold predictions within the training data, so its test set errors are on unseen data either way. Runs made with commit ff2e0cd (a `_calCoeffs` file and a `CALIBRATION` line in the run description) used that scheme in the nested CV too.
+**Outputs** (in `--savepath`): `<run name>_outercvErrors`, `_innerScores`, `_bestParams`, `_calCoeffs` and `_runDescription`, each `_acc<date>`. The calibrated columns of `_outercvErrors` (`cluster{k}_calpred`, `lincal_pred`, `calibrated_error`) use one slope and intercept per cluster x outer fold (`_calCoeffs`), fitted the way `run_model_application.py` fits them on all trainval: each outer fold's tuned model for cluster k is refit on each inner fold and predicts that inner fold's held-out cluster k rows, and the line is fitted to the decile means of these pooled out-of-fold `cluster{k}_pred` vs the target. The outer validation rows are not used to calibrate, so the calibrated errors are out-of-sample estimates of the application's calibrated test errors. Run descriptions record the method on a `CALIBRATION` line. Earlier runs: before Nov 2 2026 and from ff2e0cd's revert to Nov 4 2026, the calibration was fitted on the outer validation rows themselves (optimistic calibrated errors, no `_calCoeffs` file); ff2e0cd (Nov 2) used inner out-of-fold predictions but fitted on `weighted_pred`. Uncalibrated errors (`weighted_pred`, `val_error`) are the same in all of them.
 
 Submit from this folder: the job runs from the folder `sbatch` is called from (or `ARGOCLARE_SRC_DIR`). To keep the logs on pscratch as before, add `-o /pscratch/sd/s/sangsong/argoclare_runs/logs/%x_%j.out`.
 
@@ -72,7 +72,7 @@ sbatch -J RFR_{JOBNAME}  submit_nested_cv.sbatch XGB xgb_full --run-name crusoe_
 sbatch -J RFR_noADT  submit_nested_cv.sbatch XGB xgb_full --run-name crusoe_RFR_rfr_full_noADT --seed 42 --drop-features adt
 ```
 
-MLR benchmark (multiple linear regression, one per cluster): the `mlr` grid is empty, so there is no inner CV (`--n-inner` is ignored and no `_innerScores` file is written). Each outer fold model is a plain least-squares fit. Use the same seed and tag as the RFR/ERT/XGB comparison to test on identical folds; `compare_algorithms.py --tag <tag> --algorithms RFR ERT XGB MLR` then includes it.
+MLR benchmark (multiple linear regression, one per cluster): the `mlr` grid is empty, so there is no inner tuning and no `_innerScores` file. The inner folds (`--n-inner`, default 5) are still made, for the calibration coefficients. Each outer fold model is a plain least-squares fit. Use the same seed and tag as the RFR/ERT/XGB comparison to test on identical folds; `compare_algorithms.py --tag <tag> --algorithms RFR ERT XGB MLR` then includes it.
 ```
 sbatch -J MLR_cmp20261102 -t 00:15:00 submit_nested_cv.sbatch MLR mlr --config ../../configs/southernOcean_CRUSOE.toml \
     --seed 42 --run-name crusoe_MLR_mlr_cmp20261102
@@ -149,7 +149,7 @@ conda activate dask-cv
 python compare_algorithms.py --tag cmp20261015
 ```
 
-For each cluster k this scores that cluster's own model on its own rows (`cluster{k}_pred` vs `delta_pco2` where `cluster == k`) and picks the algorithm with the lowest RMSE. Calibrated errors (`cluster{k}_calpred`) are stored alongside but not used to choose, since the nested CV calibration is fitted on the same validation rows. A warning is printed for any cluster where the calibrated RMSE would pick a different algorithm. It stops with an error if any of the three runs has no output file.
+For each cluster k this scores that cluster's own model on its own rows (`cluster{k}_pred` vs `delta_pco2` where `cluster == k`) and picks the algorithm with the lowest RMSE. Calibrated errors (`cluster{k}_calpred`) are stored alongside but not used to choose (in runs from before Nov 4 2026 they are fitted on the same validation rows; see Outputs above). A warning is printed for any cluster where the calibrated RMSE would pick a different algorithm. It stops with an error if any of the three runs has no output file.
 
 Saved to the results folder:
 - `<tag>_algorithmComparison.csv`: RMSE, MAE, bias and n for every cluster x algorithm (raw and `_cal`)

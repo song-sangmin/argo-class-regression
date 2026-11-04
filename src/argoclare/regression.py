@@ -338,13 +338,22 @@ def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var='delta
     return calibrated_valDF
 
 
-def get_clustered_calibration_coeffs(valDF, target_var='delta_pco2'):
-    """Run within an outer fold (with clusters)"""
+def get_clustered_calibration_coeffs(valDF, target_var='delta_pco2', pred_col='cluster{k}_pred'):
+    """Linear calibration coefficients [slope, intercept] for each assigned cluster k: a line fitted to the
+    decile means of target_var vs the prediction, over the rows of valDF with cluster == k.
+    Run within an outer fold (with clusters), or on the pooled out-of-fold predictions for the final model.
+
+    :param pred_col: prediction column to fit on, with {k} for the cluster number. Default 'cluster{k}_pred'
+                     (cluster k's own model, the column apply_clustered_calibration corrects); 'weighted_pred'
+                     gives the fit used before Nov 4 2026 (cluster probability weighted prediction)
+    """
     cal_coeffs = {ncluster: None for ncluster in valDF['cluster'].unique()}
     for ncluster, class_valDF in valDF.groupby('cluster'):
-        class_valDF['n_decile'] = pd.qcut(class_valDF['weighted_pred'], 10, labels=list(range(1, 11)))  #
-        cal_pred = class_valDF.groupby('n_decile', observed=True)['weighted_pred'].agg(['mean', 'min', 'max', 'count'])
-        cal_obs = class_valDF.groupby('n_decile', observed=True)[target_var].agg(['mean', 'min', 'max', 'count'])
+        col = pred_col.format(k=int(ncluster))
+        class_valDF = class_valDF.dropna(subset=[col, target_var])
+        n_decile = pd.qcut(class_valDF[col], 10, labels=list(range(1, 11)))
+        cal_pred = class_valDF.groupby(n_decile, observed=True)[col].agg(['mean', 'min', 'max', 'count'])
+        cal_obs = class_valDF.groupby(n_decile, observed=True)[target_var].agg(['mean', 'min', 'max', 'count'])
 
         stat_var = 'mean'
         lincal = stats.linregress(cal_pred[stat_var].values, cal_obs[stat_var].values)

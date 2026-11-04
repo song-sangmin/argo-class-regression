@@ -7,7 +7,7 @@ Dask chooses the number of workers and threads from the available CPUs unless --
 Usage (normally called by submit_nested_cv.sbatch):
     python run_dask_nested_cv.py RFR rfr_full
     python run_dask_nested_cv.py XGB xgb_full --run-name crusoe_XGB_platformCV_fullgrid10x5
-    python run_dask_nested_cv.py MLR mlr       # multiple linear regression, no tuning (no inner folds)
+    python run_dask_nested_cv.py MLR mlr       # multiple linear regression, no tuning (inner folds only calibrate)
 """
 
 import argparse
@@ -59,8 +59,8 @@ def parse_args():
         '--n-inner',
         type=int,
         default=None,
-        help='Inner folds (tuning). Default: [regression] n_inner with --config, else 5. '
-        'Not used with an empty grid (mlr)',
+        help='Inner folds (tuning and calibration). Default: [regression] n_inner with --config, else 5. '
+        'With an empty grid (mlr), calibration only',
     )
     parser.add_argument(
         '--cv-type',
@@ -138,7 +138,7 @@ def main():
     n_clusters = int(trainval_data.columns.str.fullmatch(r'cluster\d+_prob').sum())  # GMM classes
     print(f'Loaded {len(trainval_data)} samples from {args.data} ({n_clusters} clusters)')
     print(f'Algorithm: {args.algorithm}, grid: {args.grid} = {tuning_grid}')
-    inner_folds = f'{args.n_inner} inner' if tuning_grid else 'no inner (no tuning)'
+    inner_folds = f'{args.n_inner} inner' + ('' if tuning_grid else ' (calibration only, no tuning)')
     print(f'Folds: {args.n_outer} outer x {inner_folds}, seed: {args.seed}, run name: {run_name}')
     print(f'Features: {run_feat_list}, target: {target}, sea ice clusters: {args.sea_ice_clusters}')
 

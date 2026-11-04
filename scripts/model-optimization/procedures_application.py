@@ -183,8 +183,12 @@ def run_model_application(
             fold_CMV, fold_valDF, feat_list, var_predict, sea_ice_clusters
         )
 
+    # One line per cluster k, fitted to the decile means of cluster k's own model's out-of-fold predictions
+    # (cluster{k}_pred) on cluster k's rows, pooled over all folds
     oof_predictions = crossvalidation.collapse_folds(ClusteredModel_FoldResults).weighted_validation
-    cal_coeffs = regression.get_clustered_calibration_coeffs(oof_predictions, target_var=var_predict)
+    cal_coeffs = regression.get_clustered_calibration_coeffs(
+        oof_predictions, target_var=var_predict, pred_col='cluster{k}_pred'
+    )
 
     ###################
     # 5. APPLY FINAL MODEL
@@ -264,6 +268,7 @@ def run_model_application(
         file.write('N_FOLDS: ' + str(n_folds) + '\n')
         file.write('CV_TYPE: ' + cv_type + '\n')
         file.write('TUNING_SCORE_METRIC: ' + scoring_metric + '\n')
+        file.write('CALIBRATION: cluster{k}_pred decile fit on out-of-fold predictions within trainval\n')
         file.write('CLUSTER_MODELS_SOURCE: ' + str(cluster_models_source) + '\n')
         file.write('N_TRAINVAL: ' + str(len(trainval_data)) + '\n')
         file.write('N_APPLICATION: ' + str(len(application_data)) + '\n')
