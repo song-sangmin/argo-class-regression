@@ -4,9 +4,8 @@ import joblib
 import numpy as np
 import pandas as pd
 import procedures_cv
+from procedures_cv import get_regressor
 from sklearn.base import clone
-from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
-from xgboost import XGBRegressor
 
 from argoclare import crossvalidation, regression
 
@@ -44,7 +43,8 @@ def run_model_application(
     :param var_predict: variable name to predict (str)
     :param n_folds: # of folds for hyperparameter tuning
     :param cluster_models: dict of {classnum: (training_algorithm, tuning_grid)},
-                           training_algorithm is 'RFR', 'ERT' or 'XGB', tuning_grid is a dict
+                           training_algorithm is 'RFR', 'ERT', 'XGB' or 'MLR', tuning_grid is a dict
+                           (empty for MLR: tuned once with default parameters)
     :param cv_type: "platform" (folds of whole floats/cruises, platform_id), "profile" (whole profiles,
                     profid column; crossvalidation platform splits by profid) or "kmeans"
     :param save_models: pickle the fitted final models with joblib (default False)
@@ -309,17 +309,6 @@ def get_test_metrics(test_data):
     test_metrics = pd.DataFrame.from_dict(rows, orient='index')
     test_metrics.index.name = 'samples'
     return test_metrics
-
-
-def get_regressor(training_algorithm):
-    """Base regressor for each algorithm, add more options as needed"""
-    if training_algorithm == 'RFR':
-        return RandomForestRegressor(random_state=24, n_jobs=1)
-    elif training_algorithm == 'XGB':
-        return XGBRegressor(random_state=24, n_jobs=1)
-    elif training_algorithm == 'ERT':
-        return ExtraTreesRegressor(random_state=24, n_jobs=1)
-    raise ValueError('Unknown training_algorithm: ' + str(training_algorithm))
 
 
 def fit_tuning_folds(

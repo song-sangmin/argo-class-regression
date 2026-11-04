@@ -72,6 +72,14 @@ sbatch -J RFR_{JOBNAME}  submit_nested_cv.sbatch XGB xgb_full --run-name crusoe_
 sbatch -J RFR_noADT  submit_nested_cv.sbatch XGB xgb_full --run-name crusoe_RFR_rfr_full_noADT --seed 42 --drop-features adt
 ```
 
+MLR benchmark (multiple linear regression, one per cluster): the `mlr` grid is empty, so there is no inner CV (`--n-inner` is ignored and no `_innerScores` file is written). Each outer fold model is a plain least-squares fit. Use the same seed and tag as the RFR/ERT/XGB comparison to test on identical folds; `compare_algorithms.py --tag <tag> --algorithms RFR ERT XGB MLR` then includes it.
+```
+sbatch -J MLR_cmp20261102 -t 00:15:00 submit_nested_cv.sbatch MLR mlr --config ../../configs/southernOcean_CRUSOE.toml \
+    --seed 42 --run-name crusoe_MLR_mlr_cmp20261102
+sbatch -J app_MLR submit_model_application.sbatch --config ../../configs/southernOcean_CRUSOE.toml \
+    --algorithm MLR --grid mlr --run-name crusoe_MLR_application
+```
+
 Apply model to Core Argo data: (optional --cluster-models, by default RFR for all)
 ```
 sbatch -J app_RFR_core submit_model_application.sbatch

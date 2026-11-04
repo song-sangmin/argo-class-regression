@@ -29,4 +29,7 @@ TUNING_GRIDS = {
         'n_estimators': [100, 250, 500],
     },
     'xgb_test': {'eta': [0.01, 0.05], 'max_depth': [2, 3]},
+    # ===== MLR =====
+    # Multiple linear regression: no hyperparameters, so no inner CV (n_inner is ignored)
+    'mlr': {},
 }

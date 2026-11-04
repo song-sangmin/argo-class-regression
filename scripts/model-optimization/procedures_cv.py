@@ -5,9 +5,27 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
+from sklearn.linear_model import LinearRegression
 from xgboost import XGBRegressor
 
 from argoclare import crossvalidation, regression
+
+ALGORITHMS = ['RFR', 'ERT', 'XGB', 'MLR']  # choices for the run scripts, see get_regressor()
+
+
+def get_regressor(training_algorithm):
+    """Base regressor for each algorithm, add more options as needed.
+    MLR (multiple linear regression) has no hyperparameters: use it with an empty grid (mlr in tuning_grids.py)"""
+    if training_algorithm == 'RFR':
+        return RandomForestRegressor(random_state=24, n_jobs=1)
+    elif training_algorithm == 'XGB':
+        return XGBRegressor(random_state=24, n_jobs=1)
+    elif training_algorithm == 'ERT':
+        return ExtraTreesRegressor(random_state=24, n_jobs=1)
+    elif training_algorithm == 'MLR':
+        return LinearRegression()
+    raise ValueError('Unknown training_algorithm: ' + str(training_algorithm))
+
 
 # %% Fold functions
 
@@ -38,9 +56,10 @@ def run_dask_nested_cv(
     :param feat_list: feature list to train on
     :param var_predict: variable name to predict (str)
     :param n_outer: # of outer folds to iterate over
-    :param n_inner: # of inner folds to iterate over
-    :param training_algorithm: (str) choose 'RFR', 'ERT', 'XGB'
-    :param tuning_grid: dictionary of hyperparameter choices to test
+    :param n_inner: # of inner folds to iterate over (not used if tuning_grid is empty)
+    :param training_algorithm: (str) choose 'RFR', 'ERT', 'XGB', 'MLR'
+    :param tuning_grid: dictionary of hyperparameter choices to test; empty ({}, e.g. for MLR) skips
+                        the inner CV and fits each outer fold model with the regressor's defaults
     :param cv_type: "platform" (folds of whole floats/cruises, platform_id), "profile" (whole profiles,
                     profid column; crossvalidation platform splits by profid) or "kmeans"
     :param seed: int seed for platform fold splits (default None, not reproducible)
@@ -49,6 +68,9 @@ def run_dask_nested_cv(
     """
 
     start_time = datetime.now().strftime('%Y%m%d %H:%M:%S')
+    tune = bool(tuning_grid)  # no inner CV without hyperparameters to tune
+    if not tune:
+        n_inner = None
     ###################
     # 0. DATA SETUP
     ###################
@@ -70,21 +92,14 @@ def run_dask_nested_cv(
         soclass_cvtainers['cluster' + str(classnum)] = outer_nest
     cvtainers_future = client.scatter(soclass_cvtainers, broadcast=True)
 
-    parameter_combinations = make_parameter_combinations(tuning_grid)
-
-    # Add more options as needed
-    if training_algorithm == 'RFR':
-        use_regressor = RandomForestRegressor(random_state=24, n_jobs=1)
-    elif training_algorithm == 'XGB':
-        use_regressor = XGBRegressor(random_state=24, n_jobs=1)
-    elif training_algorithm == 'ERT':
-        use_regressor = ExtraTreesRegressor(random_state=24, n_jobs=1)
+    parameter_combinations = make_parameter_combinations(tuning_grid) if tune else []
+    use_regressor = get_regressor(training_algorithm)
 
     ###################
     # 1. INNER CV
     ###################
 
-    print('Building dask tasks for inner CV...')
+    print('Building dask tasks for inner CV...' if tune else 'No tuning grid, skipping inner CV...')
     inner_futures = []
 
     for outer_foldnum in range(1, n_outer + 1):
@@ -115,7 +130,8 @@ def run_dask_nested_cv(
 
     # Compile inner results (each for one parameter set, one outer fold, one cluster)
     inner_results = client.gather(inner_futures)
-    print('Dask computation for inner CV complete.')
+    if tune:
+        print('Dask computation for inner CV complete.')
 
     ###################
     # 2. PARAMETER SELECTION
@@ -125,8 +141,14 @@ def run_dask_nested_cv(
     inner_summary = pd.DataFrame(inner_results)
     # inner_summary = inner_summary.set_index(['outer_foldtag', 'cluster'])
 
-    best_idx = inner_summary.groupby(['outer_foldtag', 'cluster'])['mean_score'].idxmin()
-    foldxclass_best_params = (inner_summary.loc[best_idx].set_index(['outer_foldtag', 'cluster']))[['params']]
+    if tune:
+        best_idx = inner_summary.groupby(['outer_foldtag', 'cluster'])['mean_score'].idxmin()
+        foldxclass_best_params = (inner_summary.loc[best_idx].set_index(['outer_foldtag', 'cluster']))[['params']]
+    else:  # default parameters ({}) for every outer fold and class
+        fold_index = pd.MultiIndex.from_product(
+            [['fold' + str(k) for k in range(1, n_outer + 1)], class_tags], names=['outer_foldtag', 'cluster']
+        )
+        foldxclass_best_params = pd.DataFrame({'params': [{} for _ in fold_index]}, index=fold_index)
 
     print('Selected best parameters for each outer fold and class.')
 
@@ -213,9 +235,10 @@ def run_dask_nested_cv(
     ClusteredModel_ValidationErrors = crossvalidation.collapse_folds(
         ClusteredModel_OuterFoldResults
     )  # weighted validation DF
-    ClusteredModel_InnerResults = inner_summary.drop(columns=['params']).set_index(
-        ['outer_foldtag', 'cluster']
-    )  # all inner fold scores (mean of 5 MAE's per param set)
+    if tune:
+        ClusteredModel_InnerResults = inner_summary.drop(columns=['params']).set_index(
+            ['outer_foldtag', 'cluster']
+        )  # all inner fold scores (mean of 5 MAE's per param set)
     ClusteredModel_BestParams = foldxclass_best_params.copy()  # best params used to train each outer fold model
 
     # To save:
@@ -223,7 +246,8 @@ def run_dask_nested_cv(
     ClusteredModel_ValidationErrors.weighted_validation.to_csv(
         outpath + outfile + '_outercvErrors_acc' + datetag + '.csv'
     )
-    ClusteredModel_InnerResults.to_csv(outpath + outfile + '_innerScores_acc' + datetag + '.csv')
+    if tune:
+        ClusteredModel_InnerResults.to_csv(outpath + outfile + '_innerScores_acc' + datetag + '.csv')
     ClusteredModel_BestParams.to_csv(outpath + outfile + '_bestParams_acc' + datetag + '.csv')
 
     end_time = datetime.now().strftime('%Y%m%d %H:%M:%S')
@@ -232,7 +256,7 @@ def run_dask_nested_cv(
         file.write('RUN_END: ' + end_time + '\n')
         file.write('ALGORITHM: ' + training_algorithm + '\n')
         file.write('N_OUTER: ' + str(n_outer) + '\n')
-        file.write('N_INNER: ' + str(n_inner) + '\n')
+        file.write('N_INNER: ' + (str(n_inner) if tune else '0 (no tuning grid)') + '\n')
         file.write('CV_TYPE: ' + cv_type + '\n')
         file.write('SEED: ' + str(seed) + '\n')
         file.write('INNER_SCORE_METRIC: ' + scoring_metric + '\n')
@@ -241,7 +265,8 @@ def run_dask_nested_cv(
             file.write(f'{key}: {value}\n')
 
     print('Saved validation errors to ' + outpath + outfile + '_outercvErrors_acc' + datetag + '.csv')
-    print('Saved inner fold scores to ' + outpath + outfile + '_innerScores_acc' + datetag + '.csv')
+    if tune:
+        print('Saved inner fold scores to ' + outpath + outfile + '_innerScores_acc' + datetag + '.csv')
     print('Saved best params to ' + outpath + outfile + '_bestParams_acc' + datetag + '.csv')
     print('Saved run description to ' + outpath + outfile + 'runDescription_acc' + datetag + '.txt')
 

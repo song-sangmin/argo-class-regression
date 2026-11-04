@@ -339,6 +339,7 @@ def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var='delta
 
 
 def get_clustered_calibration_coeffs(valDF, target_var='delta_pco2'):
+    """Run within an outer fold (with clusters)"""
     cal_coeffs = {ncluster: None for ncluster in valDF['cluster'].unique()}
     for ncluster, class_valDF in valDF.groupby('cluster'):
         class_valDF['n_decile'] = pd.qcut(class_valDF['weighted_pred'], 10, labels=list(range(1, 11)))  #

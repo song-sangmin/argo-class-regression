@@ -32,6 +32,7 @@ from datetime import datetime
 import pandas as pd
 import procedures_application
 import procedures_application_alternate
+import procedures_cv
 from dask.distributed import Client, LocalCluster
 from tuning_grids import TUNING_GRIDS
 
@@ -138,7 +139,7 @@ def parse_args():
     )
     parser.add_argument(
         '--algorithm',
-        choices=['RFR', 'ERT', 'XGB'],
+        choices=procedures_cv.ALGORITHMS,
         default=None,
         help='One algorithm for every cluster, with --grid (instead of --cluster-models or CLUSTER_MODELS)',
     )
@@ -203,7 +204,7 @@ def main():
     if missing_clusters:
         raise ValueError(f'Cluster models are missing clusters {sorted(missing_clusters)}')
     for classnum, (algorithm, grid) in cluster_model_names.items():
-        if algorithm not in ('RFR', 'ERT', 'XGB'):
+        if algorithm not in procedures_cv.ALGORITHMS:
             raise ValueError(f'Cluster {classnum}: unknown algorithm {algorithm}')
         if grid not in TUNING_GRIDS:
             raise ValueError(f'Cluster {classnum}: unknown grid {grid}, choose from {sorted(TUNING_GRIDS)}')

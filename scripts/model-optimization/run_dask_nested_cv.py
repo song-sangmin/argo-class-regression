@@ -7,6 +7,7 @@ Dask chooses the number of workers and threads from the available CPUs unless --
 Usage (normally called by submit_nested_cv.sbatch):
     python run_dask_nested_cv.py RFR rfr_full
     python run_dask_nested_cv.py XGB xgb_full --run-name crusoe_XGB_platformCV_fullgrid10x5
+    python run_dask_nested_cv.py MLR mlr       # multiple linear regression, no tuning (no inner folds)
 """
 
 import argparse
@@ -43,7 +44,7 @@ default_savepath = '/pscratch/sd/s/sangsong/argoclare_runs/results/'
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('algorithm', choices=['RFR', 'ERT', 'XGB'])
+    parser.add_argument('algorithm', choices=procedures_cv.ALGORITHMS)
     parser.add_argument('grid', choices=sorted(TUNING_GRIDS), help='Name of tuning grid in tuning_grids.py')
     parser.add_argument(
         '--run-name', default=None, help='Output file prefix (default: crusoe_<ALGORITHM>_<cv_type>CV_grid_<grid>)'
@@ -58,7 +59,8 @@ def parse_args():
         '--n-inner',
         type=int,
         default=None,
-        help='Inner folds (tuning). Default: [regression] n_inner with --config, else 5',
+        help='Inner folds (tuning). Default: [regression] n_inner with --config, else 5. '
+        'Not used with an empty grid (mlr)',
     )
     parser.add_argument(
         '--cv-type',
@@ -136,7 +138,8 @@ def main():
     n_clusters = int(trainval_data.columns.str.fullmatch(r'cluster\d+_prob').sum())  # GMM classes
     print(f'Loaded {len(trainval_data)} samples from {args.data} ({n_clusters} clusters)')
     print(f'Algorithm: {args.algorithm}, grid: {args.grid} = {tuning_grid}')
-    print(f'Folds: {args.n_outer} outer x {args.n_inner} inner, seed: {args.seed}, run name: {run_name}')
+    inner_folds = f'{args.n_inner} inner' if tuning_grid else 'no inner (no tuning)'
+    print(f'Folds: {args.n_outer} outer x {inner_folds}, seed: {args.seed}, run name: {run_name}')
     print(f'Features: {run_feat_list}, target: {target}, sea ice clusters: {args.sea_ice_clusters}')
 
     with LocalCluster(dashboard_address=None) as cluster, Client(cluster) as client:

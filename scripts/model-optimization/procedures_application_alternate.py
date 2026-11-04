@@ -20,9 +20,9 @@ from procedures_application import (
     apply_final_model,
     fit_final_class_model,
     fit_tuning_folds,
-    get_regressor,
     get_test_metrics,
 )
+from procedures_cv import get_regressor
 
 from argoclare import crossvalidation, regression
 
