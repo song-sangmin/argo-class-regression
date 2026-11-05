@@ -56,18 +56,10 @@ def run_dask_nested_cv(
     :param feat_list: feature list to train on
     :param var_predict: variable name to predict (str)
     :param n_outer: # of outer folds to iterate over
-    :param n_inner: # of inner folds to iterate over, for tuning and for the calibration coefficients
-                    (calibration only if tuning_grid is empty)
+    :param n_inner: # of inner folds to iterate over (not used if tuning_grid is empty)
     :param training_algorithm: (str) choose 'RFR', 'ERT', 'XGB', 'MLR'
     :param tuning_grid: dictionary of hyperparameter choices to test; empty ({}, e.g. for MLR) skips
-                        the inner tuning and fits each outer fold model with the regressor's defaults
-
-    Calibration: for each outer fold x cluster k, the model with that fold's tuned parameters is refit on
-    each inner fold and predicts that inner fold's held-out rows of cluster k. A line fitted to the decile
-    means of these pooled out-of-fold cluster{k}_pred vs the target gives one slope and intercept per
-    outer fold x cluster (_calCoeffs), applied to the outer validation rows. This repeats, inside each
-    outer fold, the calibration procedures_application.py fits on all trainval; the outer validation
-    rows are not used to calibrate.
+                        the inner CV and fits each outer fold model with the regressor's defaults
     :param cv_type: "platform" (folds of whole floats/cruises, platform_id), "profile" (whole profiles,
                     profid column; crossvalidation platform splits by profid) or "kmeans"
     :param seed: int seed for platform fold splits (default None, not reproducible)
@@ -76,7 +68,9 @@ def run_dask_nested_cv(
     """
 
     start_time = datetime.now().strftime('%Y%m%d %H:%M:%S')
-    tune = bool(tuning_grid)  # no inner tuning without hyperparameters to tune (inner folds still calibrate)
+    tune = bool(tuning_grid)  # no inner CV without hyperparameters to tune
+    if not tune:
+        n_inner = None
     ###################
     # 0. DATA SETUP
     ###################
@@ -105,7 +99,7 @@ def run_dask_nested_cv(
     # 1. INNER CV
     ###################
 
-    print('Building dask tasks for inner CV...' if tune else 'No tuning grid, skipping inner tuning...')
+    print('Building dask tasks for inner CV...' if tune else 'No tuning grid, skipping inner CV...')
     inner_futures = []
 
     for outer_foldnum in range(1, n_outer + 1):
@@ -162,9 +156,8 @@ def run_dask_nested_cv(
     # 3. OUTER CV - FIT CLASS/FOLD MODELS
     ###################
 
-    print('Building dask tasks for outer CV and calibration using tuned parameters...')
+    print('Building dask tasks for outer CV using tuned parameters...')
     outer_futures = []
-    calibration_futures = []
 
     for outer_foldnum in range(1, n_outer + 1):
         for classnum in range(1, n_clusters + 1):
@@ -190,22 +183,8 @@ def run_dask_nested_cv(
 
             outer_futures.append(outer_future)
 
-            # Inner fold out-of-fold predictions with the same tuned parameters, for calibration
-            calibration_future = client.submit(
-                predict_calibration_folds,  # returns a dict with outer_foldtag, cluster, predictions
-                'fold' + str(outer_foldnum),
-                tuned_params,
-                cvtainers_future,
-                'cluster' + str(classnum),
-                use_regressor,
-                class_feat_list,
-                var_predict,
-            )
-            calibration_futures.append(calibration_future)
-
     outer_results = client.gather(outer_futures)
-    calibration_results = client.gather(calibration_futures)
-    print('Dask computation for fitting outer fold models and calibration predictions complete.')
+    print('Dask computation for fitting outer fold models complete.')
 
     ###################
     # 4. BUILD FOLD CMV + COMPUTE OUTER VALIDATION ERRORS
@@ -214,7 +193,6 @@ def run_dask_nested_cv(
     model_finder = organize_fold_results(outer_results)
     # print(model_finder)
     ClusteredModel_OuterFoldResults = {}  # ClusteredModelVersion results
-    cal_rows = []  # calibration coefficients for each outer fold x cluster
     for outer_foldnum in range(1, n_outer + 1):
         outer_foldtag = 'fold' + str(outer_foldnum)
 
@@ -235,19 +213,12 @@ def run_dask_nested_cv(
 
         fold_CMV = evaluate_outer_fold(fold_CMV, fold_valDF, feat_list, var_predict, sea_ice_clusters)
 
-        # Linear calibration: one slope and intercept per cluster for this outer fold, fitted on the pooled
-        # inner fold out-of-fold cluster{k}_pred of the outer fold's training data (not its validation rows)
-        calibration_oof = pd.concat(
-            [res['predictions'] for res in calibration_results if res['outer_foldtag'] == outer_foldtag], axis=0
-        )
+        # Linear calibration: one slope and intercept per cluster for this outer fold, fitted on the decile
+        # means of cluster{k}_pred vs the target over the fold's own validation rows of cluster k
         cal_coeffs = regression.get_clustered_calibration_coeffs(
-            calibration_oof, target_var=var_predict, pred_col='cluster{k}_pred'
+            fold_CMV.weighted_validation, target_var=var_predict, pred_col='cluster{k}_pred'
         )
         fold_CMV.cal_coeffs = cal_coeffs
-        cal_rows += [
-            {'outer_foldtag': outer_foldtag, 'cluster': int(k), 'slope': slope, 'intercept': intercept}
-            for k, (slope, intercept) in sorted(cal_coeffs.items())
-        ]
         fold_CMV.weighted_validation = regression.apply_clustered_calibration(
             cal_coeffs, fold_CMV.weighted_validation, n_clusters, target_var=var_predict
         )
@@ -281,7 +252,6 @@ def run_dask_nested_cv(
     if tune:
         ClusteredModel_InnerResults.to_csv(outpath + outfile + '_innerScores_acc' + datetag + '.csv')
     ClusteredModel_BestParams.to_csv(outpath + outfile + '_bestParams_acc' + datetag + '.csv')
-    pd.DataFrame(cal_rows).to_csv(outpath + outfile + '_calCoeffs_acc' + datetag + '.csv', index=False)
 
     end_time = datetime.now().strftime('%Y%m%d %H:%M:%S')
     with open((outpath + outfile + '_runDescription_acc' + datetag + '.txt'), 'w') as file:
@@ -289,13 +259,11 @@ def run_dask_nested_cv(
         file.write('RUN_END: ' + end_time + '\n')
         file.write('ALGORITHM: ' + training_algorithm + '\n')
         file.write('N_OUTER: ' + str(n_outer) + '\n')
-        file.write('N_INNER: ' + str(n_inner) + ('' if tune else ' (calibration only, no tuning grid)') + '\n')
+        file.write('N_INNER: ' + (str(n_inner) if tune else '0 (no tuning grid)') + '\n')
         file.write('CV_TYPE: ' + cv_type + '\n')
         file.write('SEED: ' + str(seed) + '\n')
         file.write('INNER_SCORE_METRIC: ' + scoring_metric + '\n')
-        file.write(
-            'CALIBRATION: cluster{k}_pred decile fit on inner fold out-of-fold predictions of each outer fold training data\n'
-        )
+        file.write('CALIBRATION: cluster{k}_pred decile fit on each outer fold validation rows\n')
         file.write('TUNING_GRID: ' + '\n')
         for key, value in tuning_grid.items():
             file.write(f'{key}: {value}\n')
@@ -304,10 +272,9 @@ def run_dask_nested_cv(
     if tune:
         print('Saved inner fold scores to ' + outpath + outfile + '_innerScores_acc' + datetag + '.csv')
     print('Saved best params to ' + outpath + outfile + '_bestParams_acc' + datetag + '.csv')
-    print('Saved calibration coefficients to ' + outpath + outfile + '_calCoeffs_acc' + datetag + '.csv')
     print('Saved run description to ' + outpath + outfile + 'runDescription_acc' + datetag + '.txt')
 
-    del inner_futures, outer_futures, calibration_futures, cvtainers_future
+    del inner_futures, outer_futures, cvtainers_future
     return
 
 
@@ -391,45 +358,6 @@ def fit_outer_class_model(
     Mdl.fit(outer_train[class_feat_list], outer_train[var_predict])
 
     return {'outer_foldtag': outer_foldtag, 'cluster': classtag, 'model': Mdl, 'tuned_params': tuned_params}
-
-
-def predict_calibration_folds(
-    outer_foldtag, tuned_params, data_cvtainers, classtag, use_regressor, class_feat_list, var_predict
-):
-    """For one outer fold x cluster k: refit cluster k's model with the tuned parameters on each inner fold's
-    training data and predict that inner fold's held-out rows of cluster k (same fits as fit_inner_folds for
-    the best parameter set). Every cluster k row of the outer fold's training data is held out in one inner
-    fold, so this gives one out-of-fold cluster{k}_pred for each. Returns predictions, not models."""
-    cluster_data = data_cvtainers[classtag]
-    classnum = int(classtag.replace('cluster', ''))
-    predictions = []
-    for inner_foldtag in cluster_data.inner_nests[outer_foldtag].fold_list:
-        inner_train = (
-            cluster_data.get_inner_training_data(outer_foldtag, inner_foldtag)
-            .dropna(subset=class_feat_list + [var_predict])
-            .copy()
-        )
-        inner_val = (
-            cluster_data.get_inner_validation_data(outer_foldtag, inner_foldtag)
-            .dropna(subset=class_feat_list + [var_predict])
-            .copy()
-        )
-        Mdl = clone(use_regressor)
-        Mdl.set_params(**tuned_params)
-        Mdl.fit(inner_train[class_feat_list], inner_train[var_predict])
-        predictions.append(
-            pd.DataFrame(
-                {
-                    'cluster': classnum,
-                    'inner_fold': inner_foldtag,
-                    classtag + '_pred': Mdl.predict(inner_val[class_feat_list]),
-                    var_predict: inner_val[var_predict].to_numpy(),
-                },
-                index=inner_val.index,
-            )
-        )
-
-    return {'outer_foldtag': outer_foldtag, 'cluster': classtag, 'predictions': pd.concat(predictions)}
 
 
 def evaluate_outer_fold(fold_CMV, fold_valDF, feat_list, var_predict, sea_ice_clusters):

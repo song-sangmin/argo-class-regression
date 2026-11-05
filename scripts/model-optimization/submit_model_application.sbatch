@@ -21,6 +21,10 @@
 # or use the best algorithm by cluster from compare_algorithms.py:
 #   sbatch -J app_cmp20261015 submit_model_application.sbatch \
 #       --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json
+#
+# Calibration: by default procedures_application_test.py (coefficients fitted on the final models'
+# predictions on all trainval). For the out-of-fold calibration in procedures_application.py:
+#   sbatch -J app_RFR_oof submit_model_application.sbatch --calibration oof
 
 set -eo pipefail
 

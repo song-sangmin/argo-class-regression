@@ -1,4 +1,5 @@
-"""Alternate version of procedures_application.run_model_application with in-sample calibration.
+"""Version of procedures_application.run_model_application with in-sample calibration
+(the default in run_model_application.py, --calibration full).
 
 Tuning and parameter selection are the same as procedures_application.py. The calibration
 coefficients are fitted differently:
@@ -247,7 +248,7 @@ def run_model_application(
         file.write('TUNING_SCORE_METRIC: ' + scoring_metric + '\n')
         file.write(
             'CALIBRATION: cluster{k}_pred decile fit on final model predictions on all trainval data '
-            '(procedures_application_alternate.py)\n'
+            '(procedures_application_test.py)\n'
         )
         file.write('CLUSTER_MODELS_SOURCE: ' + str(cluster_models_source) + '\n')
         file.write('N_TRAINVAL: ' + str(len(trainval_data)) + '\n')

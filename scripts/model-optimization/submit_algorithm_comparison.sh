@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Submit one nested CV job per algorithm (RFR, ERT, XGB) on identical folds, for
+# Submit one nested CV job per algorithm (RFR, ERT, XGB, MLR) on identical folds, for
 # choosing the best algorithm by cluster with compare_algorithms.py.
 # Run from a login node; each algorithm gets its own 1-node job via submit_nested_cv.sbatch.
 #
@@ -12,7 +12,7 @@
 #
 # Run names are crusoe_<ALGORITHM>_<GRID>_<TAG>. Once all jobs finish, on the login node:
 #   module load python; conda activate dask-cv      (or your cluster's environment)
-#   python compare_algorithms.py --tag TAG
+#   python compare_algorithms.py --tag TAG --algorithms RFR ERT XGB MLR
 # On another cluster, set the Slurm account etc. with SBATCH_ACCOUNT, SBATCH_PARTITION, ... and the
 # environment with ARGOCLARE_ENV_SETUP (see submit_nested_cv.sbatch); this script passes them on.
 
@@ -27,9 +27,9 @@ shift 1
 SEED=${SEED:-42} # same seed for every algorithm, so all runs use identical folds
 
 # ==== Algorithm, tuning grid (tuning_grids.py) and time limit for each job =======
-ALGORITHMS=(RFR      ERT      XGB)
-GRIDS=(     rfr_full ert_full xgb_full)
-TIMES=(     01:00:00 01:00:00 02:00:00)
+ALGORITHMS=(RFR      ERT      XGB      MLR)
+GRIDS=(     rfr_full ert_full xgb_full mlr)
+TIMES=(     01:00:00 01:00:00 02:00:00 00:15:00)
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # The jobs run from (and log to) this folder, wherever this script is started from
@@ -51,6 +51,6 @@ ALL_IDS=$(IFS=,; echo "${JOB_IDS[*]}")
 echo
 echo "Check progress:"
 echo "  sacct -j $ALL_IDS --format=JobID,JobName,State,Elapsed"
-echo "When all three show COMPLETED, compare on the login node:"
+echo "When all ${#JOB_IDS[@]} show COMPLETED, compare on the login node:"
 echo "  ${ARGOCLARE_ENV_SETUP-module load python && conda activate dask-cv}"
-echo "  python compare_algorithms.py --tag $TAG"
+echo "  python compare_algorithms.py --tag $TAG --algorithms ${ALGORITHMS[*]}"

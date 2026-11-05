@@ -1,11 +1,11 @@
 """
 Train one final clustered model and apply it to coreArgo data.
 
-For each cluster, tunes hyperparameters on --n-folds.
-Fits calibration coefficients from out-of-fold predictions before
-fitting a final model on all of that cluster's data. With --calibration insample, the
-coefficients are instead fitted on the final models' predictions on all of trainval
-(procedures_application_alternate.py).
+For each cluster, tunes hyperparameters on --n-folds and fits a final model on all of that
+cluster's data. By default (--calibration full, procedures_application_test.py) the
+calibration coefficients are fitted on the final models' predictions on all of trainval.
+With --calibration oof (procedures_application.py) they are instead fitted on out-of-fold
+predictions within trainval.
 
 The 6 class models are applied (weighted by cluster probabilities)
 to add cluster{k}_pred, weighted_pred, cluster{k}_calpred and lincal_pred.
@@ -21,7 +21,7 @@ Usage:
     python run_model_application.py --run-name crusoe_application_mixed --n-folds 5
     python run_model_application.py --cluster-models /pscratch/sd/s/sangsong/argoclare_runs/results/cmp20261015_bestAlgorithms.json
     python run_model_application.py --config ../../configs/example_drake.toml --algorithm RFR --grid rfr_test
-    python run_model_application.py --config ../../configs/example_drake.toml --algorithm RFR --grid rfr_test --calibration insample
+    python run_model_application.py --config ../../configs/example_drake.toml --algorithm RFR --grid rfr_test --calibration oof
 """
 
 import argparse
@@ -31,7 +31,7 @@ from datetime import datetime
 
 import pandas as pd
 import procedures_application
-import procedures_application_alternate
+import procedures_application_test
 import procedures_cv
 from dask.distributed import Client, LocalCluster
 from tuning_grids import TUNING_GRIDS
@@ -148,10 +148,11 @@ def parse_args():
     )
     parser.add_argument(
         '--calibration',
-        choices=['oof', 'insample'],
-        default='oof',
-        help='oof (default): calibrate on out-of-fold predictions within trainval (procedures_application.py); '
-        "insample: on the final models' predictions on all trainval (procedures_application_alternate.py)",
+        choices=['oof', 'full'],
+        default='full',
+        help="full (default): calibrate on the final models' predictions on all trainval "
+        '(procedures_application_test.py); oof: on out-of-fold predictions within trainval '
+        '(procedures_application.py)',
     )
     parser.add_argument(
         '--save-models', action='store_true', help='Pickle the fitted final models with joblib (off by default)'
@@ -250,7 +251,7 @@ def main():
     ):
         print(client)
         print('Starting dask training: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
-        procedures = procedures_application_alternate if args.calibration == 'insample' else procedures_application
+        procedures = procedures_application_test if args.calibration == 'full' else procedures_application
         procedures.run_model_application(
             client,
             trainval_data,
