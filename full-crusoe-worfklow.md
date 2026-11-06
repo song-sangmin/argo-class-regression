@@ -34,6 +34,42 @@ sbatch -J RFR_full submit_nested_cv.sbatch RFR rfr_full --config ../../configs/s
 sbatch -J app_RFR_core submit_model_application.sbatch --config ../../configs/southernOcean_CRUSOE.toml   # final models, core predictions, 2024 test
 ```
 
+**With pixi tasks.** Run from the repo root (not `scripts/`). The tasks take the config and datasets as
+arguments, in that order (`pixi run <task> [config] [datasets]`). Each data step runs with
+`--skip-existing`, so it skips outputs that already exist instead of stopping at the first one, and a
+rerun picks up where the last one stopped. The CRUSOE-specific P1 steps (MBL, SOCAT and SOCCOM) have no
+tasks, so they stay as `python` calls.
+
+```bash
+C=configs/southernOcean_CRUSOE.toml
+
+# L0-L3 floats: L0, L1 and L2 for each dataset, then L3 core and bgc
+pixi run float-import $C "core bgc"
+
+# P1 features: core floats as a task, the rest as before (from the repo root)
+pixi run python scripts/data-processing/create_mbl_co2_dataset.py --config $C
+pixi run python scripts/data-processing/create_L2_resampled_masked_socat.py --config $C
+pixi run feature-addition $C core
+pixi run python scripts/data-processing/create_P1_soccom_features.py --config $C
+pixi run python scripts/data-processing/create_P1_socat_features.py  --config $C
+
+# P2 clustering and regression inputs
+pixi run clustering $C "soccom socat core"     # fit, then classify soccom, socat and core
+pixi run regression-prep $C
+
+# Model optimization: nested CV, then the final models (application and 2024 test), on this machine
+pixi run modeling $C RFR rfr_test
+```
+
+`modeling` runs the nested CV and the application with the same algorithm and grid, one after the
+other, on the machine you call it from (default `RFR rfr_test`, a small grid). For the full grids
+use the NERSC `sbatch` commands above. Their jobs use the `dask-cv` conda environment, not pixi.
+
+Pass `--overwrite` the same way as without pixi: add it to the `python` command (e.g.
+`pixi run python scripts/clustering/fit_argo_clustering.py --config $C --overwrite`). The tasks
+always use `--skip-existing`. Another clustering (`--n-gmm 7`) also needs the `python` commands,
+because the tasks do not pass these options on.
+
 **Testing on 2024.** `[regression] test_years = [2024]` holds the 2024 SOCCOM and SOCAT samples
 out of training. Regression prep writes them to `[files] reg_test` (`combined_test_<pcm>.csv`), and
 the application job trains the final models on 2014-2023, then evaluates those same models on the

@@ -1,15 +1,16 @@
 # Small example run: five years (2018-2022) of core and BGC Argo in the Drake Passage, from ERDDAP.
 # The whole workflow, including the models, takes a few minutes on a laptop (example-workflow-drake.md).
 #
-# Copy this file, give it a new [run] name, and point the external inputs in [files] at your
-# own copies. Outputs go to <data_root>/<name>/ with fixed names (see DEFAULT_FILES in
-# src/argoclare/pipeline.py); relative paths are relative to this file. See
-# scripts/data-processing/README.md and scripts/clustering/README.md for the commands.
+# Copy this file, give it a new [run] name, and edit the external inputs in [files].
+# Outputs go to <data_root>/<name>/ with fixed names (see DEFAULT_FILES in
+# src/argoclare/pipeline.py); relative paths are relative to this file. 
 #
-# The chain: L0 -> L1 -> L2 -> L3 (core and bgc) -> P1 float features (core and bgc) ->
+# See scripts/data-processing/README.md and scripts/clustering/README.md for the commands.
+#
+# Basic pipeline is L0 -> L1 -> L2 -> L3 (core and bgc) -> P1 float features (core and bgc) ->
 # P2 fit on core + bgc together -> P2 classes for core and bgc -> regression inputs.
 # The regression example predicts surface oxygen from the BGC floats and applies the trained
-# model to the core floats (southernOcean_CRUSOE.toml trains on SOCCOM pCO2 and SOCAT instead).
+# model to the core floats.
 
 [run]
 name = "example_drake"
