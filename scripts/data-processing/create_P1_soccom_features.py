@@ -131,7 +131,7 @@ def main():
 
     soccom_df = read_soccom_averages(soccom_dir, depth, f'{min(years)}-01-01', f'{max(years) + 1}-01-01', run.in_box)
     soccom_df = soccom_df[soccom_df.datetime.dt.year.isin(years)]
-    soccom_df = mod_prep.process_soccom_20m_averages(soccom_df, use_var=pco2_var)
+    soccom_df = mod_prep.process_soccom_surface_averages(soccom_df, use_var=pco2_var)
     soccom_df = mod_ocean.set_longitude_range(soccom_df, end_type='180')
     print(
         f'{len(soccom_df)} SOCCOM {depth} m samples from {soccom_df.wmoid.nunique()} floats, '

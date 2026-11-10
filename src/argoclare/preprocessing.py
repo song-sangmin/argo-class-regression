@@ -177,14 +177,14 @@ def index_by_datetag(platDF, type='dataset'):
 # 1.2_P1_bgcArgo_feature_prep.ipynb
 
 
-def process_soccom_20m_averages(
+def process_soccom_surface_averages(
     soccom_df, start_date='2013-12-31', end_date='2023-12-31', use_var='pCO2_pHbias5_pK1'
 ):  # , use_cols=None):
     """
     Select which variable (carbon correction) to use from the 20m averages
     Fills in missing clusters
     """
-    # soccom_df = loader.import_soccom_20m_averages(processed=False, start_date=start_date, end_date=end_date)
+    # soccom_df = loader.import_soccom_surface_averages(processed=False, start_date=start_date, end_date=end_date)
     soccom_df = soccom_df.rename(
         columns={'Lat': 'latitude', 'Lon': 'longitude', 'MLD': 'mld', 'AbsSalt': 'SA', 'ConservTemp': 'CT'}
     )
