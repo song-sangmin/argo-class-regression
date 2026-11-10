@@ -151,7 +151,8 @@ P2_trainval = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_combi
 P2_test = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_combined_test_socat_soccom_{pcm}.parquet"
 P2_application = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_coreArgo_application_{pcm}.parquet"
 reg_trainval = "{data_root}/working-vars/regression-inputs/pHbias4pK014/combined_trainval_{pcm}.csv"
-reg_test = "{data_root}/working-vars/regression-inputs/pHbias4pK014/combined_test_{pcm}.csv"                # test_years samples; run_model_application.py tests on them
+reg_test = "{data_root}/working-vars/regression-inputs/pHbias4pK014/combined_test_{pcm}.csv"                # test_years samples (bgcArgo, SOCAT), written by regression-input-prep.py
+model_test = "{data_root}/working-vars/regression-inputs/pHbias4pK014/combined_test_bgc_socat_glodap_{pcm}.csv"  # reg_test plus GLODAP (CRUSOE-SOCarbon 3.5_test_data_prep.ipynb); run_model_application.py tests on it
 reg_application = "{data_root}/working-vars/regression-inputs/pHbias4pK014/coreArgo_application_{pcm}.csv"
 reg_info = "{data_root}/working-vars/regression-inputs/pHbias4pK014/regression_info_{pcm}.json"         # sea ice clusters and features, read by model-optimization
 model_results = "{data_root}/argoclare-runs"
@@ -171,7 +172,8 @@ run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/southernOcean_CRUSOE_pHbias4pK
 
 [machines.nersc.files]
 reg_trainval = "{data_root}/pHbias4pK014/combined_trainval_{pcm}.csv"
-reg_test = "{data_root}/pHbias4pK014/combined_test_bgc_socat_glodap_{pcm}.csv"
+reg_test = "{data_root}/pHbias4pK014/combined_test_{pcm}.csv"
+model_test = "{data_root}/pHbias4pK014/combined_test_bgc_socat_glodap_{pcm}.csv"
 reg_application = "{data_root}/pHbias4pK014/coreArgo_application_{pcm}.csv"
 reg_info = "{data_root}/pHbias4pK014/regression_info_{pcm}.json"
 model_results = "/pscratch/sd/s/sangsong/argoclare_runs/results"
