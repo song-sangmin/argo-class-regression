@@ -89,3 +89,34 @@ alike, so the model gets credit partly for recognizing the float. Tested on this
 
 Both run here, even with one year, but report `platform` errors when the question is how well
 the method works for a float it has never seen.
+
+## Depth-resolved oxygen (0–1000 dbar)
+
+`configs/example_atlantic_depth.toml` predicts oxygen on every 20 dbar level from 0 to 1000 dbar
+instead of at the surface, for 2020–2021 (training 2020, test 2021). It needs the same external
+inputs as the surface example (bathymetry, ERA5 sea level pressure, CMEMS ADT). With pixi:
+
+```bash
+pixi run example-atlantic-depth    # L0-L3, P1, clustering, regression prep, models, error summary
+```
+
+What changes from the surface example:
+
+- **L1/L3:** oxygen is regridded with T/S in L3 (`[L3] bgc_vars = ["oxygen"]`). Oxygen with a
+  QC flag outside `[L1] use_flags` is set to NaN before regridding (`[L3] qc_masked_vars`), and
+  the L1 pH filter is off (`bgc_qc_vars = []`), so floats without a pH sensor are kept.
+- **Regression prep** (`[regression] depth_resolved = true`, `pressure_levels = [0, 1000, 20]`):
+  each profile becomes one row per pressure level. `pressure`, `CT`, `SA`, `sigma0` and `oxygen`
+  are the values on that level (from L3); `mlp`, `adt`, `max_solar_rad`, `atmos_pres_atm` and the
+  cluster probabilities are the profile's and repeat on every level. Row keys end in the level
+  (`_p0100`), and the application set is written as parquet (`[files] reg_application`).
+- **Folds:** `cv_type = "platform"`. Depths of a profile, and profiles of a float, are strongly
+  correlated, so whole floats are held out.
+- **Error summary:** a second table gives the errors by pressure layer (0–100, 100–300, 300–600,
+  600–1000 dbar; change with `--pressure-bins`).
+
+The linear calibration is still fit per cluster on all levels pooled, so it mostly reflects the
+deep levels, which outnumber the upper ocean. Check the calibrated and uncalibrated errors by
+pressure layer before relying on it. In a test on the Drake Passage floats (2018–2021 training,
+2022 test, RFR `rfr_test`), the 0–100 dbar test bias was about −10 µmol/kg both with and without
+calibration, while below 300 dbar it was under 2 µmol/kg.

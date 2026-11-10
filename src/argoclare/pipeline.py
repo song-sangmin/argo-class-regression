@@ -181,7 +181,7 @@ def add_model_args(p):
 
 def fill_model_args(args):
     """Fill the model-optimization options left unset from the run config ([files] reg_trainval,
-    reg_application, reg_test (if it exists), model_results, [regression] cv_type, n_outer, n_inner, n_folds, and the sea ice clusters, features and target in reg_info:
+    reg_application, model_test or else reg_test (if it exists), model_results, [regression] cv_type, n_outer, n_inner, n_folds, and the sea ice clusters, features and target in reg_info:
     args.features, args.target). Returns the Run, or None without --config."""
     if not getattr(args, 'config', None):
         return None
@@ -198,8 +198,11 @@ def fill_model_args(args):
     if hasattr(args, 'application_data') and args.application_data is None:
         args.application_data = run.input('reg_application')
     if hasattr(args, 'test_data') and args.test_data is None and not getattr(args, 'no_test', False):
-        test_file = run.path('reg_test')  # test samples from regression-input-prep.py, if it made them
+        # [files] model_test if set, else the test samples from regression-input-prep.py, if it made them
+        test_file, is_model_test = run.model_test_path()
         args.test_data = test_file if os.path.exists(test_file) else None
+        if is_model_test and args.test_data is None:
+            print(f'Warning: [files] model_test does not exist, so there is no test set: {test_file}')
     if args.savepath is None:
         args.savepath = run.path('model_results')
     if getattr(args, 'cv_type', 0) is None:
@@ -368,6 +371,14 @@ class Run:
     def template(self, key, dataset=None):
         """Path with {yr} left in, for files opened one year at a time (e.g. ERA5)."""
         return self.path(key, dataset, yr='{yr}')
+
+    def model_test_path(self):
+        """Test csv for the final models: [files] model_test if the config sets it (e.g. reg_test
+        plus GLODAP), else reg_test (the test_years samples from regression-input-prep.py)."""
+        files = self.cfg.get('files', {})
+        pcm_files = files.get(self.pcm, {}) if self.pcm else {}
+        has_model_test = 'model_test' in files or (isinstance(pcm_files, dict) and 'model_test' in pcm_files)
+        return self.path('model_test' if has_model_test else 'reg_test'), has_model_test
 
     def input(self, key, dataset=None, **fmt):
         """Path of an input file; stops with the config key if it does not exist."""

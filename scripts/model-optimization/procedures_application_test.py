@@ -45,6 +45,7 @@ def run_model_application(
     save_models=False,
     cluster_models_source=None,
     test_data=None,
+    predictions_format='csv',
 ):
     """Main dask implementation
     Train one final clustered model on trainval_data and apply it to application_data.
@@ -207,13 +208,16 @@ def run_model_application(
 
     datetag = datetime.now().strftime('%Y%m%d')
     savefiles = {
-        'predictions': outpath + outfile + '_predictions_acc' + datetag + '.csv',
+        'predictions': outpath + outfile + '_predictions_acc' + datetag + '.' + predictions_format,
         'trainval predictions': outpath + outfile + '_trainvalPredictions_acc' + datetag + '.csv',
         'tuning scores': outpath + outfile + '_tuningScores_acc' + datetag + '.csv',
         'best params': outpath + outfile + '_bestParams_acc' + datetag + '.csv',
         'calibration coefficients': outpath + outfile + '_calCoeffs_acc' + datetag + '.csv',
     }
-    application_data.to_csv(savefiles['predictions'])
+    if predictions_format == 'parquet':  # large (depth-resolved) application sets
+        application_data.to_parquet(savefiles['predictions'])
+    else:
+        application_data.to_csv(savefiles['predictions'])
     trainval_data.to_csv(savefiles['trainval predictions'])
     ClusteredModel_TuningResults.to_csv(savefiles['tuning scores'])
     ClusteredModel_BestParams.to_csv(savefiles['best params'])

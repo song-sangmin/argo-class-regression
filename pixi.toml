@@ -65,6 +65,16 @@ python scripts/model-optimization/run_model_application.py --config {{ config }}
 python scripts/analysis/error_summary.py --config {{ config }} --algorithm {{ algorithm }} --grid {{ grid }}
 """
 
+[tasks.example-atlantic-depth]
+description = "Depth-resolved oxygen (0-1000 dbar) for the Atlantic sector, 2020-2021 (configs/example_atlantic_depth.toml; needs the ERA5 SLP and CMEMS ADT files)"
+depends-on = [
+  { task = "float-import", args = ["configs/example_atlantic_depth.toml"] },
+  { task = "feature-addition", args = ["configs/example_atlantic_depth.toml"] },
+  { task = "clustering", args = ["configs/example_atlantic_depth.toml"] },
+  { task = "regression-prep", args = ["configs/example_atlantic_depth.toml"] },
+  { task = "modeling", args = ["configs/example_atlantic_depth.toml"] },
+]
+
 [tasks.error-summary]
 description = "Print the nested CV and test errors of the latest model run, overall and by cluster"
 args = [{ arg = "config", default = "configs/example_drake.toml" }, { arg = "algorithm", default = "RFR" }]

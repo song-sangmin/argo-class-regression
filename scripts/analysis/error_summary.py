@@ -8,6 +8,8 @@ test_results in the config to their folders; each defaults to model_results. The
 prediction (lincal_pred), with the uncalibrated one (weighted_pred) in parentheses, by assigned
 cluster. Both use summarize_cv_errors.error_metrics, so the CV and test columns compare directly.
 --algorithm and --grid pick the CV run of that algorithm and grid (as `pixi run modeling` does).
+For depth-resolved runs (a pressure column with more than one level), a second table gives the
+errors by pressure layer (--pressure-bins, default 0-100-300-600-1000 dbar).
 
 Usage (from the repo root):
     python scripts/analysis/error_summary.py --config configs/example_drake.toml
@@ -58,9 +60,11 @@ def run_description(path):
     return {key.strip(): value.strip() for key, value in pairs}
 
 
-def group_metrics(data, target):
-    """{group: {(metric, 'cal' or 'raw'): value, 'n': n}} for 'All' and each assigned cluster."""
-    groups = {'All': data} | {int(classnum): group for classnum, group in data.groupby('cluster')}
+def group_metrics(data, target, by='cluster'):
+    """{group: {(metric, 'cal' or 'raw'): value, 'n': n}} for 'All' and each group of the by column."""
+    groups = {'All': data} | {
+        int(key) if by == 'cluster' else key: group for key, group in data.groupby(by, observed=True)
+    }
     table = {}
     for key, group in groups.items():
         table[key] = {}
@@ -78,10 +82,21 @@ def fmt_cell(values, metric):
     return f'{text[0]} ({text[1]})'
 
 
-def print_table(tables, target):
-    """One row per group, a block of n + metrics for each of the tables (CV, test)."""
-    keys = ['All'] + sorted({key for table in tables.values() for key in table if key != 'All'})
-    header = ['cluster'] + [f'{name} {col}' for name in tables for col in ['n', *METRICS.values()]]
+def pressure_bin(data, edges):
+    """Pressure layer labels ('0-100', ...) from bin edges in dbar; the first edge is included."""
+    labels = [f'{a:g}-{b:g}' for a, b in zip(edges[:-1], edges[1:])]
+    return pd.cut(data['pressure'], edges, labels=labels, include_lowest=True)
+
+
+def is_depth_resolved(data):
+    return 'pressure' in data.columns and data['pressure'].nunique() > 1
+
+
+def print_table(tables, target, label='cluster', keys=None):
+    """One row per group, a block of n + metrics for each of the tables (CV, test).
+    keys: group order after 'All' (default: sorted)."""
+    keys = ['All'] + (keys or sorted({key for table in tables.values() for key in table if key != 'All'}))
+    header = [label] + [f'{name} {col}' for name in tables for col in ['n', *METRICS.values()]]
     rows = []
     for key in keys:
         row = [str(key)]
@@ -96,7 +111,7 @@ def print_table(tables, target):
     def line(cells):
         return '  '.join(c.ljust(w) if i == 0 else c.rjust(w) for i, (c, w) in enumerate(zip(cells, widths)))
 
-    print(f'\nErrors in {target} (prediction - observation): calibrated (uncalibrated)\n')
+    print(f'\nErrors in {target} (prediction - observation) by {label}: calibrated (uncalibrated)\n')
     print(line(header))
     print(line(['-' * w for w in widths]))
     for i, row in enumerate(rows):
@@ -112,6 +127,13 @@ def main():
     parser.add_argument('--cv-file', default=None, help='outercvErrors csv to use instead of the newest one')
     parser.add_argument('--test-file', default=None, help='testPredictions csv to use instead of the newest one')
     parser.add_argument('--target', default=None, help='Target column (default: from regression_info, with --config)')
+    parser.add_argument(
+        '--pressure-bins',
+        type=float,
+        nargs='+',
+        default=[0, 100, 300, 600, 1000],
+        help='Pressure layer edges (dbar) for depth-resolved runs (default: 0 100 300 600 1000)',
+    )
     pipeline.add_model_args(parser)
     args = parser.parse_args()
 
@@ -151,13 +173,13 @@ def main():
             'For results copied elsewhere, set [files] cv_results and test_results in the config'
         )
 
-    tables = {}
+    data = {}
     if cv_file:
         description = run_description(cv_file)
         folds = f'{description.get("N_OUTER", "?")} outer x {description.get("N_INNER", "?")} inner'
         print(f'Nested CV: {cv_file}')
         print(f'    {description.get("ALGORITHM", "")} {description.get("CV_TYPE", "")} CV, {folds} folds')
-        tables['CV'] = group_metrics(pd.read_csv(cv_file, index_col=0), target)
+        data['CV'] = pd.read_csv(cv_file, index_col=0)
     else:
         print('Nested CV: no outercvErrors file' + (' for that algorithm and grid' if args.algorithm else ''))
     if test_file:
@@ -165,10 +187,17 @@ def main():
         years = ', '.join(str(y) for y in sorted(test_data['year'].unique())) if 'year' in test_data else '?'
         print(f'Test:      {test_file}')
         print(f'    final models on the test set, years {years}')
-        tables['test'] = group_metrics(test_data, target)
+        data['test'] = test_data
     else:
         print('Test:      no testPredictions file (no test years, or --no-test)')
-    print_table(tables, target)
+    print_table({name: group_metrics(df, target) for name, df in data.items()}, target)
+
+    if any(is_depth_resolved(df) for df in data.values()):
+        edges = args.pressure_bins
+        layers = {name: df.assign(layer=pressure_bin(df, edges)) for name, df in data.items()}
+        labels = list(pressure_bin(next(iter(data.values())), edges).cat.categories)
+        tables = {name: group_metrics(df, target, by='layer') for name, df in layers.items()}
+        print_table(tables, target, label='pressure (dbar)', keys=labels)
 
 
 if __name__ == '__main__':

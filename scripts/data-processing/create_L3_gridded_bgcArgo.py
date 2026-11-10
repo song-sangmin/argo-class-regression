@@ -7,7 +7,10 @@ Same steps as 0.4_bgcArgo_processing.ipynb (sections 3-5), one year at a time:
        is within [L3] surface_max (25) dbar of the surface
     3. Regrid T/S and [L3] bgc_vars (pH) to 0-1000 dbar every 5 dbar and 1050-1950 dbar every 50 dbar with argoclare's regrid_pressure_levels()
        (with the interpolate_z_profile() fix that keeps levels falling exactly
-       on the first/last observation, e.g. a first observation at 5.0 dbar)
+       on the first/last observation, e.g. a first observation at 5.0 dbar).
+       [L3] qc_masked_vars (e.g. ["oxygen"], which L1 keeps without QC filtering) are set to
+       NaN where their <var>_qc flag is not in [L1] use_flags before regridding, so only good
+       observations are interpolated; the rest of the row (T/S) is kept
     4. Add mixed layer pressure 'mlp' (0.03 kg/m3 sigma0 threshold from 10 dbar) and
        mixed layer depth 'mld' (positive, m) with argoclare's add_mixedlayer_pressure()
 profid is wmoid + cycle number, so a cycle's descending (*D.nc) and ascending casts share a
@@ -57,16 +60,21 @@ def open_ocean_index(path):
     return ds
 
 
-def read_l1_year(path, profids, ref_time, bgc_list, chunksize=5_000_000):
-    """Read the selected profiles from one L1 csv; returns the data and # of descending casts dropped."""
+def read_l1_year(path, profids, ref_time, bgc_list, qc_masked=(), use_flags=(), chunksize=5_000_000):
+    """Read the selected profiles from one L1 csv; returns the data and # of descending casts dropped.
+    qc_masked variables are set to NaN where their <var>_qc flag is not in use_flags."""
     profids = set(profids)
+    qc_cols = [f'{var}_qc' for var in qc_masked]
     df = pd.concat(
         [
             chunk[chunk.profid.isin(profids)]
-            for chunk in pd.read_csv(path, usecols=read_cols + bgc_list, chunksize=chunksize)
+            for chunk in pd.read_csv(path, usecols=read_cols + bgc_list + qc_cols, chunksize=chunksize)
         ]
     )
     df['datetime'] = pd.to_datetime(df['datetime'], format='mixed')
+    for var, qc_col in zip(qc_masked, qc_cols):
+        flags = df[qc_col].astype(str).str.replace(r'\.0$', '', regex=True)
+        df.loc[~flags.isin([str(f) for f in use_flags]), var] = np.nan
 
     # Descending and ascending casts of a cycle share a profid; keep the later (ascending) one
     n_desc = int((df.groupby('profid')['datetime'].nunique() > 1).sum())
@@ -116,6 +124,10 @@ def main():
     cfg = run.section('L3')
     years, ref_time = run.years(), run.ref_time
     bgc_list = cfg.get('bgc_vars', ['pH'])
+    qc_masked = cfg.get('qc_masked_vars', [])
+    use_flags = run.section('L1').get('use_flags', ['1', '2', '5', '8'])
+    if any(var not in bgc_list for var in qc_masked):
+        raise SystemExit(f'[L3] qc_masked_vars {qc_masked} must also be in [L3] bgc_vars {bgc_list}')
     n_jobs = args.n_jobs or cfg.get('n_jobs', 1)
     if run.skip(['L3_data', 'L3_index'], 'bgc'):
         return run.nothing_to_do()
@@ -127,7 +139,9 @@ def main():
     for yr in years:
         print(f'===> {yr}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
         yearINDEX = open_ocean_index(run.input('L2', 'bgc', yr=yr))
-        yearDF, n_desc = read_l1_year(run.input('L1', 'bgc', yr=yr), yearINDEX.profid.values, ref_time, bgc_list)
+        yearDF, n_desc = read_l1_year(
+            run.input('L1', 'bgc', yr=yr), yearINDEX.profid.values, ref_time, bgc_list, qc_masked, use_flags
+        )
         n_desc_total += n_desc
 
         # Surfacemost observation of the kept cast (L2 values may come from the descending cast)
@@ -192,6 +206,7 @@ def main():
             'Includes mixed layer pressure (mlp, dbar) and depth (mld, m) from a 0.03 kg/m3 '
             'sigma0 threshold relative to 10 dbar.',
             'pressure_levels': 'Pressure levels in dbar: ' + str(pres_regular),
+            'qc_masked_vars': ', '.join(qc_masked),  # set to NaN where <var>_qc not in [L1] use_flags
             'source': source,
             **run.attrs(),
             'descending_casts_dropped': n_desc_total,

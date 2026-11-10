@@ -24,7 +24,7 @@ Evaluations:
                      distance to the nearest training sample of its fold
        forward CV:   for each of --forward-years, train on the earlier years and score that year,
                      split into platforms (floats, cruises) seen or not seen in training
-    3. test:         final models trained on all trainval, scored on [files] reg_test or --test
+    3. test:         final models trained on all trainval, scored on [files] model_test (else reg_test) or --test
                      (by platform/year, and 2024 bgcArgo floats seen vs not seen in training)
     4. application:  no truth for coreArgo, so the difference of each single model from
                      clustered6, binned by distance to the nearest training sample
@@ -178,7 +178,7 @@ def main():
     parser.add_argument(
         '--config', required=True, help='Run config with [files] reg_trainval, reg_info, reg_application'
     )
-    parser.add_argument('--test', default=None, help='Test csv (default: [files] reg_test)')
+    parser.add_argument('--test', default=None, help='Test csv (default: [files] model_test, else reg_test)')
     parser.add_argument('--out-dir', required=True, help='Folder for the output tables and predictions')
     parser.add_argument('--n-folds', type=int, default=5, help='Platform CV folds (default 5)')
     parser.add_argument('--sector-deg', type=float, default=45, help='Longitude sector width for sector CV')
@@ -202,7 +202,7 @@ def main():
     with open(run.path('reg_info')) as f:
         info = json.load(f)
     base, target, sea_ice_clusters = info['features'], info.get('target', 'delta_pco2'), info['sea_ice_clusters']
-    test_file = args.test or run.path('reg_test')
+    test_file = args.test or run.model_test_path()[0]
 
     trainval = add_encodings(pd.read_csv(run.path('reg_trainval'), index_col=0))
     test = add_encodings(pd.read_csv(test_file, index_col=0))

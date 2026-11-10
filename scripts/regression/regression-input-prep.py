@@ -23,6 +23,14 @@ and the application P2 dataset (core), and:
        prints counts by cluster and platform. The csvs keep the columns model-optimization
        needs, plus the features and target, and with [regression] cv_type = "profile" a profid
        column for model-optimization's whole-profile folds.
+    6. With [regression] depth_resolved = true, every float sample becomes one row per pressure
+       level in pressure_levels ([start, stop, step] dbar, on the L3 grid): the features and target
+       that [files] L3_data has on pressure levels (e.g. CT, SA, sigma0, oxygen), plus pressure,
+       replace the profile's surface values, and the profile values (cluster probabilities, mlp,
+       max_solar_rad, adt, ...) are repeated on each level. The target QC comes from L3
+       ([L3] qc_masked_vars), so target_qc_flags is not applied. Keys get the level appended
+       (<sample_key>_p0100, application <profid>_p0100), and the csvs keep profid and pressure.
+       A [files] reg_application ending in .parquet is written as parquet (large depth-resolved sets).
 Writes [files] reg_trainval (indexed by sample_key: platform_id + sample time to the minute;
 unique), the format read by run_dask_nested_cv.py (pd.read_csv(..., index_col=0)), with
 test_years the same for [files] reg_test (run_model_application.py tests the final models on it),
@@ -35,6 +43,7 @@ Usage:
     python regression-input-prep.py --config ../../configs/southernOcean_CRUSOE.toml --n-gmm 7
     python regression-input-prep.py --config ../../configs/synthetic_CRUSOE.toml
     python regression-input-prep.py --config ../../configs/southernOcean_CRUSOE.toml --from-splits
+    python regression-input-prep.py --config ../../configs/example_atlantic_depth.toml
 """
 
 import json
@@ -43,6 +52,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 
 from argoclare import pipeline
 
@@ -111,30 +121,82 @@ def rename_classes(df):
     return df, prob_columns(df, 'cluster')
 
 
-def add_sample_key(df):
-    """Unique row key: platform_id + sample time to the minute (+ a counter if ever repeated)."""
+def level_tag(pressure):
+    """_p0100 for 100 dbar, appended to the keys of depth-resolved rows."""
+    return '_p' + pressure.round().astype(int).astype(str).str.zfill(4)
+
+
+def add_sample_key(df, depth=False):
+    """Unique row key: platform_id + sample time to the minute (+ _p<pressure> with depth, + a
+    counter if ever repeated)."""
     key = df['platform_id'].astype(str) + '_' + pd.to_datetime(df['datetime']).dt.strftime('%Y%m%d%H%M')
+    if depth:
+        key = key + level_tag(df['pressure'])
     dup = key.groupby(key).cumcount()
     df.index = np.where(dup > 0, key + '_' + dup.astype(str), key)
     df.index.name = 'sample_key'
     return df
 
 
-def regression_table(df, cfg, feat_list, target, label):
+def pressure_levels(cfg):
+    """[regression] pressure_levels [start, stop, step] (dbar) as a list with depth_resolved, else None."""
+    if not cfg.get('depth_resolved'):
+        return None
+    start, stop, step = cfg.get('pressure_levels', [0, 1000, 20])
+    return np.arange(start, stop + 1, step).tolist()
+
+
+def level_columns(l3_file, cols):
+    """The columns in cols that [files] L3_data has on pressure levels, and pressure itself."""
+    with xr.open_dataset(l3_file) as ds:
+        return [c for c in cols if c == 'pressure' or (c in ds.data_vars and 'pressure' in ds[c].dims)]
+
+
+def level_table(l3_files, cols, levels):
+    """Long table (profid, pressure, cols) of the L3_data files at the given pressure levels."""
+    parts = []
+    for path in l3_files:
+        with xr.open_dataset(path) as ds:
+            missing = [c for c in cols if c not in ds.data_vars]
+            if missing:
+                raise SystemExit(f'{path} has no {", ".join(missing)} on pressure levels')
+            off_grid = sorted(set(levels) - set(ds['pressure'].values.tolist()))
+            if off_grid:
+                raise SystemExit(f'[regression] pressure_levels {off_grid} are not pressure levels of {path}')
+            levels_df = ds[cols].sel(pressure=levels).to_dataframe().reset_index()
+        parts.append(levels_df[['profid', 'pressure'] + cols])
+    return pd.concat(parts, ignore_index=True)
+
+
+def add_levels(df, levels_df):
+    """One row per profile and pressure level: the level columns replace the profile's surface values."""
+    df = df.drop(columns=[c for c in levels_df.columns if c != 'profid' and c in df.columns])
+    return df.merge(levels_df, on='profid', how='inner')
+
+
+def regression_table(df, cfg, feat_list, target, label, levels_df=None):
     """A P2 split (trainval or test) as the model-optimization csv: class columns renamed,
     platform_indexer (and profid with cv_type = "profile"), target QC flags applied, rows missing
-    a feature or the target and duplicates dropped, indexed by sample_key."""
+    a feature or the target and duplicates dropped, indexed by sample_key. With levels_df
+    (depth_resolved), one row per profile and pressure level instead."""
     df, prob_cols = rename_classes(df)
     df['platform_indexer'] = np.where(df['platform'].isin(float_platforms), 'wmoid', 'cruiseid')
     group_cols = []
+    if levels_df is not None:
+        n_profiles = len(df)
+        df = add_levels(df, levels_df)
+        group_cols = ['profid', 'pressure']
+        print(f'\n{label}: {n_profiles} profiles -> {len(df)} rows on {df["pressure"].nunique()} pressure levels')
     if cfg.get('cv_type') == 'profile':
         # model-optimization folds of whole profiles group by profid; samples without one
         # (ship data, SOCCOM samples without a matched profile) are their own group
         pid = df['profid'].astype(str) if 'profid' in df.columns else pd.Series('', index=df.index)
         df['profid'] = pid.where(~pid.isin(['', 'nan', 'None']), df['sample_id'].astype(str))
-        group_cols = ['profid']
+        group_cols = with_columns(group_cols, ['profid'])
     n = len(df)
-    if cfg.get('target_qc_flags'):
+    if levels_df is not None:
+        print(f'{label}: {target} QC flags were applied in L3 ([L3] qc_masked_vars), not with target_qc_flags')
+    elif cfg.get('target_qc_flags'):
         qc = df[f'{target}_qc'].astype(str).str.replace(r'\.0$', '', regex=True)
         bad = ~qc.isin([str(x) for x in cfg['target_qc_flags']])
         print(f'\n{label}: dropping {int(bad.sum())} samples with {target}_qc not in {cfg["target_qc_flags"]}')
@@ -143,7 +205,7 @@ def regression_table(df, cfg, feat_list, target, label):
     cols = with_columns([c for c in keep_cols if c in df.columns], feat_list + [target] + group_cols) + prob_cols
     df = df.dropna(subset=feat_list + [target])[cols].drop_duplicates()
     print(f'\n{label}: dropped {n - len(df)} samples missing a feature or {target} (or duplicated); {len(df)} left')
-    df = add_sample_key(df)
+    df = add_sample_key(df, depth=levels_df is not None)
     counts = df.groupby(['cluster', 'platform']).size().unstack(fill_value=0)
     print(f'\n{label} samples by cluster and platform:\n{counts.to_string()}')
     return df, prob_cols
@@ -190,6 +252,22 @@ def main():
     cfg = run.section('regression')
     feat_list = [f for f in cfg['features'] if f not in cfg.get('drop_features', [])]
     target = cfg.get('target', 'delta_pco2')
+    levels = pressure_levels(cfg)
+    level_cols = []  # features and target taken from L3_data on each pressure level
+    if levels:
+        train_l3 = [run.input('L3_data', ds) for ds in cfg['train']]
+        app_l3 = run.input('L3_data', cfg['application']) if cfg.get('application') else None
+        level_cols = level_columns(train_l3[0], feat_list + [target])
+        if target not in level_cols:
+            raise SystemExit(
+                f'depth_resolved: {train_l3[0]} has no {target} on pressure levels; add it to [L3] bgc_vars '
+                'and qc_masked_vars and rerun create_L3_gridded_bgcArgo.py'
+            )
+        with xr.open_dataset(train_l3[0]) as ds:
+            if target not in ds.attrs.get('qc_masked_vars', ''):
+                print(f'Warning: {target} in {os.path.basename(train_l3[0])} was not QC masked ([L3] qc_masked_vars)')
+        print(f'Depth-resolved: {level_cols} on {len(levels)} pressure levels, {levels[0]}-{levels[-1]} dbar')
+    profile_cols = [c for c in feat_list + [target] if c not in level_cols]
     splits = [('trainval', cfg['trainval_years'])] + ([('test', cfg['test_years'])] if cfg.get('test_years') else [])
     # reg_info is written last, so with the split parquets it marks a finished run
     finished = ['reg_info'] + (
@@ -209,7 +287,7 @@ def main():
         pcm_params = p2_attrs.get('pcm_params', run.pcm)
         prob_cols = prob_columns(split_dfs['trainval'])
         sources = os.path.basename(split_files['trainval'])
-        check_columns(split_dfs['trainval'], feat_list + [target], sources)
+        check_columns(split_dfs['trainval'], profile_cols, sources)
     else:
         train_files = [run.input('P2', ds) for ds in cfg['train']]
         app_file = run.input('P2', cfg['application']) if cfg.get('application') else None
@@ -222,7 +300,7 @@ def main():
         combined['year'] = combined['datetime'].dt.year
         prob_cols = prob_columns(combined)
         sources = ', '.join(os.path.basename(f) for f in train_files)
-        check_columns(combined, feat_list + [target], sources)
+        check_columns(combined, profile_cols, sources)
         combined = reorder(
             combined,
             [
@@ -299,7 +377,7 @@ def main():
         # ===== 2. Application set, without the float training samples
         if app_file:
             app = pd.read_parquet(app_file)
-            check_columns(app, feat_list, os.path.basename(app_file))
+            check_columns(app, [c for c in feat_list if c not in level_cols], os.path.basename(app_file))
             app_attrs, n_app, n_excluded = dict(app.attrs), len(app), 0
             if cfg.get('exclude_training', True):
                 train = set()  # own profids of float training samples (trainval and test)
@@ -336,7 +414,10 @@ def main():
 
     # ===== 3-5. Regression csvs, from the saved parquet files
     reg_file = reg_out or run.path('reg_trainval', ice_tag=ice_tag)
-    trainval, prob_cols = regression_table(pd.read_parquet(split_files['trainval']), cfg, feat_list, target, 'trainval')
+    train_levels = level_table(train_l3, [c for c in level_cols if c != 'pressure'], levels) if levels else None
+    trainval, prob_cols = regression_table(
+        pd.read_parquet(split_files['trainval']), cfg, feat_list, target, 'trainval', train_levels
+    )
     if reg_out:
         trainval.to_csv(reg_out)
         print(f'\nSaved {len(trainval)} samples to {reg_out}')
@@ -346,13 +427,16 @@ def main():
         'features': feat_list,
         'drop_features': cfg.get('drop_features', []),
         'target': target,
+        'pressure_levels': levels,
         'trainval_file': os.path.basename(reg_file),
         'n_trainval': len(trainval),
         **run.attrs(),
         'date': datetag,
     }
     if 'test' in split_files:
-        test, test_probs = regression_table(pd.read_parquet(split_files['test']), cfg, feat_list, target, 'test')
+        test, test_probs = regression_table(
+            pd.read_parquet(split_files['test']), cfg, feat_list, target, 'test', train_levels
+        )
         assert test_probs == prob_cols, 'test and trainval have different clusters'
         if test_out:
             test.to_csv(test_out)
@@ -367,17 +451,30 @@ def main():
         app, app_probs = rename_classes(app)
         assert app_probs == prob_cols, 'application and trainval have different clusters'
         app['platform_indexer'] = 'wmoid'
+        if levels:
+            app_level_cols = [c for c in level_cols if c not in ('pressure', target)]
+            app = add_levels(app, level_table([app_l3], app_level_cols, levels))
         n = len(app)
         cols = (
             ['profid']
             + with_columns(
-                [c for c in keep_cols if c in app.columns], [c for c in feat_list + [target] if c in app.columns]
+                [c for c in keep_cols if c in app.columns],
+                [c for c in feat_list + [target] + (['pressure'] if levels else []) if c in app.columns],
             )
             + prob_cols
         )
-        app = app.dropna(subset=feat_list)[cols].set_index('profid')
-        app.to_csv(app_out)
-        print(f'Saved {len(app)} application profiles ({n - len(app)} dropped for missing features) to {app_out}')
+        app = app.dropna(subset=feat_list)[cols]
+        if levels:  # profid_p0100: one row per profile and pressure level
+            app.index = app['profid'] + level_tag(app['pressure'])
+            app.index.name = 'sample_key'
+        else:
+            app = app.set_index('profid')
+        if app_out.endswith('.parquet'):
+            app.to_parquet(app_out)
+        else:
+            app.to_csv(app_out)
+        rows = 'rows (profile levels)' if levels else 'profiles'
+        print(f'Saved {len(app)} application {rows} ({n - len(app)} dropped for missing features) to {app_out}')
         info.update({'application_file': os.path.basename(app_out), 'n_application': len(app)})
     if info_out:
         with open(info_out, 'w') as f:

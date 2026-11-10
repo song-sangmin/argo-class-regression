@@ -10,7 +10,7 @@ predictions within trainval.
 The 6 class models are applied (weighted by cluster probabilities)
 to add cluster{k}_pred, weighted_pred, cluster{k}_calpred and lincal_pred.
 
-With a test set (--test-data, or [files] reg_test with --config), the same final models are
+With a test set (--test-data, or [files] model_test, else reg_test, with --config), the same final models are
 evaluated on it: <run name>_testPredictions and _testMetrics (RMSE, MAE and bias, overall and
 by cluster, uncalibrated and calibrated). The test set is not used for tuning or calibration.
 
@@ -119,15 +119,18 @@ def parse_args():
     parser.add_argument(
         '--application-data',
         default=None,
-        help='coreArgo application csv (default: [files] reg_application with --config)',
+        help='coreArgo application csv or parquet (default: [files] reg_application with --config); '
+        'predictions are saved in the same format',
     )
     parser.add_argument(
         '--test-data',
         default=None,
-        help='Held-out test csv to evaluate the final models on (default: [files] reg_test with '
-        '--config, if regression-input-prep.py made it)',
+        help='Held-out test csv to evaluate the final models on (default: [files] model_test, else reg_test, with '
+        '--config, if it exists)',
     )
-    parser.add_argument('--no-test', action='store_true', help='Skip the test set, even if [files] reg_test exists')
+    parser.add_argument(
+        '--no-test', action='store_true', help='Skip the test set, even if [files] model_test or reg_test exists'
+    )
     parser.add_argument(
         '--savepath', default=None, help='Results folder (default: [files] model_results with --config)'
     )
@@ -219,7 +222,10 @@ def main():
             f'--cv-type profile needs a profid column in {args.data}: rerun '
             'regression-input-prep.py with [regression] cv_type = "profile"'
         )
-    application_data = pd.read_csv(args.application_data, index_col=0)
+    if args.application_data.endswith('.parquet'):  # large (depth-resolved) application sets
+        application_data = pd.read_parquet(args.application_data)
+    else:
+        application_data = pd.read_csv(args.application_data, index_col=0)
     print(f'Loaded {len(trainval_data)} training samples from {args.data}')
     print(f'Loaded {len(application_data)} application samples from {args.application_data}')
     test_data = None
@@ -269,6 +275,7 @@ def main():
             save_models=args.save_models,
             cluster_models_source=cluster_models_source,
             test_data=test_data,
+            predictions_format='parquet' if args.application_data.endswith('.parquet') else 'csv',
         )
         print('Finished model application at: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
 
