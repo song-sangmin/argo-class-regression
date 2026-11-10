@@ -109,7 +109,8 @@ stages, the datasets (default `"core bgc"`):
 | `pixi run feature-addition [config] [datasets]` | P1 |
 | `pixi run clustering [config] [datasets]` | P2 fit and classify |
 | `pixi run regression-prep [config]` | regression inputs |
-| `pixi run modeling [config] [algorithm] [grid]` | nested CV, then the final models (application and test), both with that algorithm and grid (default `RFR rfr_test`) |
+| `pixi run modeling [config] [algorithm] [grid]` | nested CV, then the final models (application and test), both with that algorithm and grid (default `RFR rfr_test`), then the error summary |
+| `pixi run error-summary [config] [algorithm]` | prints the nested CV and test errors of the latest model run with that algorithm (default `RFR`), overall and by cluster |
 
 For example, `pixi run float-import configs/my_region.toml bgc`. The data tasks pass
 `--skip-existing`, so outputs that already exist are skipped instead of stopping the run: after a

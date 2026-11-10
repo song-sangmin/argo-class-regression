@@ -61,8 +61,14 @@ args = [{ arg = "config", default = "configs/example_drake.toml" }, { arg = "alg
         { arg = "grid", default = "rfr_test" }]
 cmd = """
 python scripts/model-optimization/run_dask_nested_cv.py {{ algorithm }} {{ grid }} --config {{ config }} &&
-python scripts/model-optimization/run_model_application.py --config {{ config }} --algorithm {{ algorithm }} --grid {{ grid }}
+python scripts/model-optimization/run_model_application.py --config {{ config }} --algorithm {{ algorithm }} --grid {{ grid }} &&
+python scripts/analysis/error_summary.py --config {{ config }} --algorithm {{ algorithm }} --grid {{ grid }}
 """
+
+[tasks.error-summary]
+description = "Print the nested CV and test errors of the latest model run, overall and by cluster"
+args = [{ arg = "config", default = "configs/example_drake.toml" }, { arg = "algorithm", default = "RFR" }]
+cmd = "python scripts/analysis/error_summary.py --config {{ config }} --algorithm {{ algorithm }}"
 
 [tasks.example]
 description = "The whole Drake Passage example (example-workflow-drake.md), about 5 min"
