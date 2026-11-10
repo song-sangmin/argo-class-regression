@@ -155,6 +155,10 @@ reg_test = "{data_root}/working-vars/regression-inputs/pHbias4pK014/combined_tes
 reg_application = "{data_root}/working-vars/regression-inputs/pHbias4pK014/coreArgo_application_{pcm}.csv"
 reg_info = "{data_root}/working-vars/regression-inputs/pHbias4pK014/regression_info_{pcm}.json"         # sea ice clusters and features, read by model-optimization
 model_results = "{data_root}/argoclare-runs"
+# Results copied back from NERSC, read by scripts/analysis/error_summary.py (default: model_results)
+cv_results = "{data_root}/argoclare-runs/cmp20261109_pK014"                # nested CV outercvErrors
+test_results = "{data_root}/argoclare-runs/application_RFR_realworld_pK014"  # application testPredictions
+
 
 [files.pc8_gmm6_dbar500]           # the clustering in use (Oct 15 L3 core + bgc; classes north (1) to south)
 P2_finder = "{data_root}/working-vars/P2-clustered/pc8_gmm6_dbar500/PCM_finder_pc8_gmm6_dbar500_acc20261016.parquet"
