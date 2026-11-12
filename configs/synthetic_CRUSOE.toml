@@ -6,6 +6,11 @@
 # run on it unchanged with --config configs/synthetic_CRUSOE.toml. Every [files] entry for the
 # pc8_gmm6_dbar500 clustering points at an existing file; rerunning a stage stops at the first
 # output that already exists, unless --overwrite is passed.
+#
+# 2026-11-12: synthetic SOCAT matchups limited to km_sep <= 350 km, with a +-14 day fallback
+# ([P1.socat]), as in southernOcean_CRUSOE_pHbias4pK014.toml. P1_socat, P2_syn_trainval and the
+# regression inputs now go to new *_max350km files and folders; the Oct 16-17 files are kept (paths
+# in the comments next to each entry).
 
 [run]
 name = "synthetic_CRUSOE"
@@ -31,6 +36,8 @@ n_jobs = 4
 dbar_limit = 500
 window_days = 7
 Lx = 2.5
+max_km_sep = 350                   # reject matches farther than this (km); those samples are dropped in P2
+fallback_window_days = 14          # samples with no match within 7 d, or one > max_km_sep: search +-14 d
 
 # %% P2: clustering, refit on the synthetic profiles with the real parameters
 [P2]
@@ -69,7 +76,8 @@ L3_data = "{data_root}/working-vars/synthetic/L3-interp/synthetic_{dataset}DATA_
 L3_index = "{data_root}/working-vars/synthetic/L3-interp/synthetic_{dataset}INDEX_byProfid_2014-2023_acc20261016.nc"  # CT/SA at 5 dbar, model surface variables
 P1_bgc = "{data_root}/working-vars/synthetic/P1-processed/P1_synArgo_bgc_features_yr2014-2023_acc20261016.nc"              # model features + time vars + max_solar_rad (no ADT)
 P1_core = "{data_root}/working-vars/synthetic/P1-processed/P1_synArgo_core_application_features_yr2014-2023_acc20261016.nc"
-P1_socat = "{data_root}/working-vars/synthetic/P1-processed/P1_synSOCAT_features_yr2014-2023_acc20261017.nc"              # colocated to the nearest clusterable synthetic profile (7 d)
+P1_socat = "{data_root}/working-vars/synthetic/P1-processed/P1_synSOCAT_features_yr2014-2023_max350km_fb14d.nc"          # nearest clusterable synthetic profile within 7 d, else 14 d; "" if none within 350 km
+# before 2026-11-12: P1_synSOCAT_features_yr2014-2023_acc20261017.nc (7 d, no distance limit)
 
 # Clustering and regression files for any {pcm}
 P2_finder = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/PCM_finder_{pcm}.parquet"
@@ -77,21 +85,24 @@ P2_fit = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/PCM_fit_{pcm}.js
 P2_model = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/PCM_model_{pcm}.joblib"
 P2_syn_trainval = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synthetic_combined_trainval_socat_bgc_{pcm}.parquet"
 P2_core = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synArgo_core_application_{pcm}.parquet"
-P2_trainval = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synthetic_regression_trainval_{pcm}.parquet"
-P2_test = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synthetic_regression_test_{pcm}.parquet"
-P2_application = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}/P2_synthetic_regression_application_{pcm}.parquet"
-reg_trainval = "{data_root}/working-vars/regression-inputs/combined_trainval_synthetic_{pcm}.csv"
-reg_application = "{data_root}/working-vars/regression-inputs/coreArgo_application_synthetic_{pcm}.csv"
-reg_info = "{data_root}/working-vars/regression-inputs/regression_info_synthetic_{pcm}.json"
+P2_trainval = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}_max350km/P2_synthetic_regression_trainval_{pcm}.parquet"
+P2_test = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}_max350km/P2_synthetic_regression_test_{pcm}.parquet"
+P2_application = "{data_root}/working-vars/synthetic/P2-clustered/{pcm}_max350km/P2_synthetic_regression_application_{pcm}.parquet"
+reg_trainval = "{data_root}/working-vars/regression-inputs/synthetic_max350km/combined_trainval_synthetic_{pcm}.csv"
+reg_application = "{data_root}/working-vars/regression-inputs/synthetic_max350km/coreArgo_application_synthetic_{pcm}.csv"
+reg_info = "{data_root}/working-vars/regression-inputs/synthetic_max350km/regression_info_synthetic_{pcm}.json"
+# before 2026-11-12: regression-inputs/regression_info_synthetic_{pcm}.json, and the csvs below
 model_results = "{data_root}/argoclare-runs"
 
 [files.pc8_gmm6_dbar500]           # GMM refit on synthetic profiles; classes north to south (not the real class numbers)
 P2_finder = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/PCM_finder_pc8_gmm6_dbar500_acc20261016.parquet"
 P2_fit = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/PCM_fit_pc8_gmm6_dbar500_acc20261016.json"
-P2_syn_trainval = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synthetic_combined_trainval_socat_bgc_2014-2023_acc20261017.parquet"  # synBgcArgo + synSOCAT; unclassified dropped
+P2_syn_trainval = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synthetic_combined_trainval_socat_bgc_2014-2023_max350km.parquet"  # synBgcArgo + synSOCAT; unclassified and too-far SOCAT dropped
+# before 2026-11-12: P2_synthetic_combined_trainval_socat_bgc_2014-2023_acc20261017.parquet
 P2_core = "{data_root}/working-vars/synthetic/P2-clustered/pc8_gmm6_dbar500/P2_synArgo_core_application_2014-2023_acc20261016.parquet"                     # synCoreArgo application set
-reg_trainval = "{data_root}/working-vars/regression-inputs/combined_trainval_synthetic_pc8_gmm6_dbar500_seaiceclusters6_acc20261017.csv"
-reg_application = "{data_root}/working-vars/regression-inputs/coreArgo_application_synthetic_pc8_gmm6_dbar500_acc20261017.csv"
+# reg_trainval and reg_application: the [files] entries above (regression-inputs/synthetic_max350km/).
+# before 2026-11-12: regression-inputs/combined_trainval_synthetic_pc8_gmm6_dbar500_seaiceclusters6_acc20261017.csv
+#                    and regression-inputs/coreArgo_application_synthetic_pc8_gmm6_dbar500_acc20261017.csv
 
 # %% NERSC (ARGOCLARE_MACHINE=nersc): regression inputs copied to the repo checkout, results on pscratch
 [machines.nersc.run]
@@ -99,11 +110,10 @@ data_root = "/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression
 run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/synthetic_CRUSOE"
 
 [machines.nersc.files]
-reg_trainval = "{data_root}/combined_trainval_synthetic_{pcm}.csv"
-reg_application = "{data_root}/coreArgo_application_synthetic_{pcm}.csv"
-reg_info = "{data_root}/regression_info_synthetic_{pcm}.json"
+reg_trainval = "{data_root}/synthetic_max350km/combined_trainval_synthetic_{pcm}.csv"
+reg_application = "{data_root}/synthetic_max350km/coreArgo_application_synthetic_{pcm}.csv"
+reg_info = "{data_root}/synthetic_max350km/regression_info_synthetic_{pcm}.json"
 model_results = "/pscratch/sd/s/sangsong/argoclare_runs/results"
-
-[machines.nersc.files.pc8_gmm6_dbar500]
-reg_trainval = "{data_root}/combined_trainval_synthetic_pc8_gmm6_dbar500_seaiceclusters6_acc20261017.csv"
-reg_application = "{data_root}/coreArgo_application_synthetic_pc8_gmm6_dbar500_acc20261017.csv"
+# before 2026-11-12 ([machines.nersc.files.pc8_gmm6_dbar500]):
+# reg_trainval = "{data_root}/combined_trainval_synthetic_pc8_gmm6_dbar500_seaiceclusters6_acc20261017.csv"
+# reg_application = "{data_root}/coreArgo_application_synthetic_pc8_gmm6_dbar500_acc20261017.csv"

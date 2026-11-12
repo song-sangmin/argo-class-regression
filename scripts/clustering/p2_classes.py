@@ -103,6 +103,16 @@ def classify_float_samples(df, profid_col, finder, prob_cols, max_days):
     return df, (n_matched, n_filled)
 
 
+def drop_too_far(df, label):
+    """Drop ship samples whose nearest profile was rejected in P1 as too far (colocation =
+    'too_far', [P1.socat] max_km_sep), before any gap filling. Returns the DataFrame and the count."""
+    if 'colocation' not in df.columns:
+        return df, 0
+    too_far = df['colocation'] == 'too_far'
+    print(f'{label}: dropped {int(too_far.sum())} samples whose nearest profile was too far (P1 max_km_sep)')
+    return df[~too_far].reset_index(drop=True), int(too_far.sum())
+
+
 def drop_unclassified(df, label, n_matched, n_filled, how):
     """Drop samples without a class and print the counts."""
     n = len(df)

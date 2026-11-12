@@ -15,6 +15,9 @@ Same steps as 4.4_synthetic_SOCAT.ipynb, following the real SOCAT workflow
        core + bgc L3 profiles with CT and SA at every level < [P1.socat] dbar_limit (the profiles the
        synthetic fit clusters). mld and mlp come from that profile, like the real SOCAT data.
        Samples with no profile in the window are kept with nearest_profid '' (dropped in P2).
+       As for the real data, optional [P1.socat] max_km_sep and fallback_window_days reject matches
+       farther than max_km_sep and search +-fallback_window_days for samples without a match
+       (create_P1_socat_features.colocate(); colocation column 'window', 'fallback', 'too_far', 'none').
     5. Time variables, max_solar_rad and log_mld (p1_features)
 Reads [files] syn_socat and the synthetic L3 core + bgc files, and writes [files] P1_socat, one
 netcdf along 'sample' (longitude -180 to 180; platform 'synSOCAT').
@@ -73,6 +76,7 @@ def main():
     run = pipeline.start(args, __file__)
     cfg = run.section('P1.socat')
     args.dbar_limit, args.window_days, args.Lx = cfg['dbar_limit'], cfg['window_days'], cfg['Lx']
+    max_km, fallback_days = cfg.get('max_km_sep'), cfg.get('fallback_window_days')
     args.socat = run.input('syn_socat')
     args.indexes = [run.input('L3_index', 'core'), run.input('L3_index', 'bgc')]
     args.datas = [run.input('L3_data', 'core'), run.input('L3_data', 'bgc')]
@@ -85,11 +89,16 @@ def main():
         datetime.now().strftime('%Y%m%d %H:%M:%S'),
     )
     floats = socat_p1.clusterable_profiles(args.indexes, args.datas, args.dbar_limit, run.ref_time)
-    df = socat_p1.find_nearest_float(df, floats, window_days=args.window_days, Lx=args.Lx, ref_time=run.ref_time)
+    df = socat_p1.colocate(
+        df, floats, args.window_days, args.Lx, run.ref_time, max_km_sep=max_km, fallback_window_days=fallback_days
+    )
     n_found = int((df.nearest_profid != '').sum())
+    outcome = df['colocation'].value_counts()
     print(
-        f'Colocated {n_found} of {len(df)} samples within {args.window_days:g} days; '
-        f'median km_sep {df.km_sep.median():.0f} km'
+        f'Colocated {n_found} of {len(df)} samples ({outcome.get("window", 0)} within {args.window_days:g} days, '
+        f'{outcome.get("fallback", 0)} within the {fallback_days or "-"} day fallback); '
+        f'{outcome.get("too_far", 0)} rejected (km_sep > {max_km or "-"} km), {outcome.get("none", 0)} with no '
+        f'profile; median km_sep of the matches {df.km_sep[df.nearest_profid != ""].median():.0f} km'
     )
 
     df = p1_features.add_time_vars(df, run.ref_time)
@@ -110,16 +119,26 @@ def main():
             'CT/SA at 5 dbar, and the nearest clusterable synthetic profile (mld from that profile).',
             'colocation': f'weighted distance sqrt(dlon^2/{args.Lx:g}^2 + dlat^2) within +-{args.window_days:g} '
             f'days, among synthetic profiles with CT and SA at all levels < {args.dbar_limit:g} dbar in: '
-            + ', '.join(os.path.basename(f) for f in args.indexes),
+            + ', '.join(os.path.basename(f) for f in args.indexes)
+            + (
+                f'; then +-{fallback_days:g} days for samples without a match'
+                + (' within the distance limit' if max_km else '')
+                if fallback_days
+                else ''
+            )
+            + (f'; matches with km_sep > {max_km:g} km rejected (colocation = too_far)' if max_km else ''),
             'dbar_limit': args.dbar_limit,
+            **({'max_km_sep': max_km} if max_km else {}),
+            **({'fallback_window_days': fallback_days} if fallback_days else {}),
             'samples_colocated': n_found,
+            'colocation_counts': ', '.join(f'{k}: {v}' for k, v in outcome.items()),
             'source': os.path.basename(args.socat),
             **run.attrs(),
             'date': datetag,
         },
     )
     print(f'Saved {len(df)} samples to {savefile}')
-    run.finish(samples_colocated=n_found)
+    run.finish(samples_colocated=n_found, colocation={k: int(v) for k, v in outcome.items()})
 
 
 if __name__ == '__main__':

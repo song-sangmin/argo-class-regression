@@ -11,7 +11,9 @@ clustering/p2_classes.py:
         within [P2] float_gapfill_days (12) days (both must agree; nearest in time)
     synthetic SOCAT ('synSOCAT'): the class of its nearest_profid from P1 (the nearest
         clusterable synthetic profile within 7 days); samples whose nearest profile has no
-        class are filled from the same cruise's classified samples within [P2] ship_gapfill_days (1.5)
+        class are filled from the same cruise's classified samples within [P2] ship_gapfill_days (1.5).
+        Samples whose match was rejected in P1 as too far (colocation = 'too_far', [P1.socat]
+        max_km_sep) are dropped first, without gap filling.
 Samples still without a class are dropped (counts printed and stored in df.attrs).
 Subsampling by year (so the synthetic training data is sampled like the real data): for each
 year, keep a random ([synthetic] subsample_seed) subset of the classified synthetic bgc profiles with as many samples
@@ -61,6 +63,8 @@ def classify_floats(path, finder, prob_cols, args, label):
 
 def classify_socat(path, finder, prob_cols, args):
     ship = read_p1(path)
+    n_p1 = len(ship)
+    ship, n_too_far = p2_classes.drop_too_far(ship, 'synthetic SOCAT')
     ship['platform_id'], ship['sample_id'] = ship['cruiseid'], ship['sample_datetag']
     ship = p2_classes.assign_from_profid(ship, 'nearest_profid', finder, prob_cols)
     n_matched = int(ship['class_assign'].notna().sum())
@@ -72,7 +76,8 @@ def classify_socat(path, finder, prob_cols, args):
     ship = p2_classes.drop_unclassified(
         ship, 'synthetic SOCAT', n_matched, n_filled, f'from the same cruise within {args.ship_days:g} days'
     )
-    return ship, {'samples': n, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n - len(ship)}
+    counts = {'samples': n_p1, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n - len(ship)}
+    return ship, counts | ({'dropped_too_far': n_too_far} if n_too_far else {})
 
 
 def subsample_by_year(syn, real, seed=0):

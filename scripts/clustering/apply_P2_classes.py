@@ -61,11 +61,7 @@ def classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, 
 
     if ship:
         days = args.ship_days or p2.get('ship_gapfill_days', 1.5)
-        if 'colocation' in df.columns:
-            too_far = df['colocation'] == 'too_far'
-            n_too_far = int(too_far.sum())
-            df = df[~too_far].reset_index(drop=True)
-            print(f'{label}: dropped {n_too_far} samples whose nearest profile was too far (P1 max_km_sep)')
+        df, n_too_far = p2_classes.drop_too_far(df, label)
         df['platform_id'], df['sample_id'] = df['cruiseid'], df['sample_datetag']
         df = p2_classes.assign_from_profid(df, 'nearest_profid', finder, prob_cols)
         n_matched = int(df['class_assign'].notna().sum())
