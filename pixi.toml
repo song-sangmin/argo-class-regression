@@ -104,6 +104,8 @@ cmocean = ">=4.0.3,<5"
 matplotlib = ">=3.11.2,<4"
 tqdm = ">=4.70.1,<5"
 pip = ">=26.2.2,<27"                # argopy runs `python -m pip list` at import
+sphinx = ">=9.2.0,<10"
+make = ">=4.4.1,<5"
 
 [pypi-dependencies]
 argoclare = { path = ".", editable = true }

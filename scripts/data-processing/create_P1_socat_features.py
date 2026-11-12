@@ -10,6 +10,14 @@ Replaces 1.3_P1_socat_features_with_colocation.ipynb, one row per L2 SOCAT sampl
        in argoclare's find_nearest_float() (vectorized here). Adds nearest_profid, prof_datetime,
        prof_lat, prof_lon, yd_sep (days), km_sep, and the profile's mld/mlp. Samples with no
        profile in the window are kept with nearest_profid '' (dropped in P2).
+       Optional, both off by default:
+         [P1.socat] max_km_sep: a match more than this many km away (km_sep) is rejected
+         [P1.socat] fallback_window_days: samples with no match, or a rejected one, are matched
+             again within +-fallback_window_days (e.g. 14); a match found there replaces the
+             first only if it is within max_km_sep (if set)
+       The colocation column records the outcome: 'window', 'fallback', 'too_far' (rejected:
+       nearest_profid '' and mld/mlp NaN, with prof_*, yd_sep and km_sep of the rejected
+       window match kept for reference; dropped in P2 without gap filling) or 'none'.
     3. SA, CT from sal and sst at the surface; ERA5 sea level pressure; pco2_ocean from fco2rec
        with PyCO2SYS (same call as argoclare's convert_socat_fco2(), on all samples at once)
     4. The same features as the float P1 datasets (p1_features; ADT, wind and sea ice only if the
@@ -113,6 +121,33 @@ def find_nearest_float(df, floats, window_days=7, Lx=2.5, ref_time=ref_time):
     return pd.concat([df, out], axis=1)
 
 
+def colocate(df, floats, window_days=7, Lx=2.5, ref_time=ref_time, max_km_sep=None, fallback_window_days=None):
+    """find_nearest_float() within window_days, then for samples with no match, or a match farther
+    than max_km_sep, a second search within fallback_window_days; a fallback match is used if it
+    is within max_km_sep. Matches still farther than max_km_sep are rejected (nearest_profid '',
+    mld/mlp NaN). Adds a colocation column: 'window', 'fallback', 'too_far' or 'none'."""
+    out = find_nearest_float(df, floats, window_days=window_days, Lx=Lx, ref_time=ref_time)
+    out['colocation'] = np.where(out['nearest_profid'] != '', 'window', 'none')
+    far = out['km_sep'] > max_km_sep if max_km_sep is not None else pd.Series(False, index=out.index)
+    if fallback_window_days:
+        redo = (out['nearest_profid'] == '') | far
+        if redo.any():
+            second = find_nearest_float(df[redo], floats, window_days=fallback_window_days, Lx=Lx, ref_time=ref_time)
+            ok = second['nearest_profid'] != ''
+            if max_km_sep is not None:
+                ok &= second['km_sep'] <= max_km_sep
+            use = second.index[ok]
+            cols = ['nearest_profid', 'prof_datetime', 'prof_lat', 'prof_lon', 'mld', 'mlp', 'yd_sep', 'km_sep']
+            out.loc[use, cols] = second.loc[use, cols]
+            out.loc[use, 'colocation'] = 'fallback'
+            far[use] = False
+    if max_km_sep is not None:
+        out.loc[far, 'colocation'] = 'too_far'
+        out.loc[far, 'nearest_profid'] = ''
+        out.loc[far, ['mld', 'mlp']] = np.nan
+    return out
+
+
 # %% Ocean pCO2 and features
 
 
@@ -162,6 +197,7 @@ def main():
     run = pipeline.start(args, __file__)
     cfg, socat_cfg = run.section('P1'), run.section('P1.socat')
     dbar_limit, window_days, Lx = socat_cfg['dbar_limit'], socat_cfg['window_days'], socat_cfg['Lx']
+    max_km, fallback_days = socat_cfg.get('max_km_sep'), socat_cfg.get('fallback_window_days')
     years, ref_time = run.years('P1.socat'), run.ref_time
     l2_file = run.input('socat_L2')
     indexes = [run.input('L3_index', 'core'), run.input('L3_index', 'bgc')]
@@ -189,11 +225,14 @@ def main():
         datetime.now().strftime('%Y%m%d %H:%M:%S'),
     )
     floats = clusterable_profiles(indexes, datas, dbar_limit, ref_time)
-    socat = find_nearest_float(socat, floats, window_days=window_days, Lx=Lx, ref_time=ref_time)
+    socat = colocate(socat, floats, window_days, Lx, ref_time, max_km_sep=max_km, fallback_window_days=fallback_days)
     n_found = int((socat.nearest_profid != '').sum())
+    outcome = socat['colocation'].value_counts()
     print(
-        f'Colocated {n_found} of {len(socat)} samples within {window_days:g} days; '
-        f'median km_sep {socat.km_sep.median():.0f} km: ',
+        f'Colocated {n_found} of {len(socat)} samples ({outcome.get("window", 0)} within {window_days:g} days, '
+        f'{outcome.get("fallback", 0)} within the {fallback_days or "-"} day fallback); '
+        f'{outcome.get("too_far", 0)} rejected (km_sep > {max_km or "-"} km), {outcome.get("none", 0)} with no '
+        f'profile; median km_sep of the matches {socat.km_sep[socat.nearest_profid != ""].median():.0f} km: ',
         datetime.now().strftime('%Y%m%d %H:%M:%S'),
     )
 
@@ -219,16 +258,26 @@ def main():
             'including samples with no profile in the window (nearest_profid = "").',
             'colocation': f'weighted distance sqrt(dlon^2/{Lx:g}^2 + dlat^2) within +-{window_days:g} '
             f'days, among profiles with CT and SA at all levels < {dbar_limit:g} dbar in: '
-            + ', '.join(os.path.basename(f) for f in indexes),
+            + ', '.join(os.path.basename(f) for f in indexes)
+            + (
+                f'; then +-{fallback_days:g} days for samples without a match'
+                + (' within the distance limit' if max_km else '')
+                if fallback_days
+                else ''
+            )
+            + (f'; matches with km_sep > {max_km:g} km rejected (colocation = too_far)' if max_km else ''),
             'dbar_limit': dbar_limit,
+            **({'max_km_sep': max_km} if max_km else {}),
+            **({'fallback_window_days': fallback_days} if fallback_days else {}),
             'samples_colocated': n_found,
+            'colocation_counts': ', '.join(f'{k}: {v}' for k, v in outcome.items()),
             'source': os.path.basename(l2_file),
             **run.attrs(),
             'date': datetag,
         },
     )
     print(f'Saved {len(socatP1)} samples to {savefile}: ', datetime.now().strftime('%Y%m%d %H:%M:%S'))
-    run.finish(samples_colocated=n_found)
+    run.finish(samples_colocated=n_found, colocation={k: int(v) for k, v in outcome.items()})
 
 
 if __name__ == '__main__':
