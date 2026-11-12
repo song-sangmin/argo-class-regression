@@ -25,10 +25,10 @@
 # model to every level of the core floats.
 
 [run]
-name = "example_atlantic_depth2020-2021"
+name = "example_atlantic_depth_2020-2021"
 data_root = "../x_data"            # run folder: <data_root>/<name>/
 years = [2020, 2021]
-ref_time = "2014-01-01"            # origin of linear_time / yearday (days)
+ref_time = "2020-01-01"            # origin of linear_time / yearday (days)
 
 [region]
 box = [-70, 20, -90, -35]          # lon_min, lon_max, lat_min, lat_max: Atlantic sector
@@ -55,14 +55,14 @@ description = "Ifremer ERDDAP"
 use_flags = ["1", "2", "5", "8"]
 core_qc_vars = ["temperature_qc", "salinity_qc", "pressure_qc", "time_qc", "position_qc"]
 bgc_qc_vars = []                   # no pH filter (it would drop floats without pH); oxygen QC is in [L3]
-bgc_vars = ["pH", "oxygen"]
+bgc_vars = ["oxygen"]
 n_jobs = 1
 
 # %% L2: open ocean mask (create_L2_masked_argo.py)
 [L2]
 bathy_lim = -1000                  # keep profiles where GEBCO elevation < bathy_lim (m)
 
-# %% L3: regridding (create_L3_gridded_*.py)
+# %% L3: regridding (create_L3_gridded_*.py) - Adds sigma0
 [L3]
 surface_max = 25
 bgc_vars = ["oxygen"]              # regridded with T/S
@@ -77,7 +77,7 @@ n_jobs = 1
 # needs its gridded file in [files] (the time variables, max_solar_rad and log_mld need none):
 #   atmos_pres_atm, atmos_pres_Pa: era5_slp     adt: adt     wind_speed: era5_wind
 #   sea_ice: seaice     atmos_co2_ppm, pco2_atmos, delta_pco2: mbl (from mbl_txt) and era5_slp
-features = ["CT", "SA", "adt", "max_solar_rad", "atmos_pres_atm"]
+features = ["CT", "SA", "max_solar_rad", "atmos_pres_atm"]
 
 # %% P2: clustering (clustering/fit_argo_clustering.py, clustering/apply_P2_classes.py)
 [P2]
@@ -105,7 +105,7 @@ cv_type = "platform"               # whole floats held out: their profiles and d
 n_outer = 5                        # run_dask_nested_cv.py: outer folds (error estimate); default 10
 n_inner = 3                        # run_dask_nested_cv.py: inner folds (tuning); default 5
 depth_resolved = true              # one row per profile and pressure level (regression-input-prep.py)
-pressure_levels = [0, 1000, 20]    # start, stop, step (dbar), on the L3 grid (every 5 dbar to 1000)
+pressure_levels = [20, 1001, 20]    # start, stop, step (dbar), on the L3 grid (every 5 dbar to 1000)
 
 # %% Files
 # Pipeline outputs use the run folder layout, so only external inputs are listed here.

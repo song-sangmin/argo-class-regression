@@ -7,6 +7,10 @@
 # with file names that include <pcm>. Only the config copy and provenance/ go to run_dir.
 #
 # On NERSC, set ARGOCLARE_MACHINE=nersc (or pass --machine nersc) to use [machines.nersc].
+#
+# 2026-11-11: SOCAT matchups limited to km_sep <= 350 km, with a +-14 day fallback ([P1.socat]).
+# P1_socat, P2_socat, the P2 splits and the regression inputs now go to new *_max350km files and
+# folders; the Nov 9 files they replace are kept (paths in the comments next to each entry).
 
 [run]
 name = "southernOcean_CRUSOE_pHbias4pK014"
@@ -83,6 +87,8 @@ match_hours = 1
 dbar_limit = 500
 window_days = 7
 Lx = 2.5
+max_km_sep = 350                   # reject matches farther than this (km); those samples are dropped in P2
+fallback_window_days = 14          # samples with no match within 7 d, or one > max_km_sep: search +-14 d
 
 # %% P2: clustering (clustering/fit_argo_clustering.py, clustering/apply_P2_classes.py)
 [P2]
@@ -140,23 +146,29 @@ socat_L2 = "{data_root}/socat/SOCATv2025_SO_randomresample23p5h_seed0_open_ocean
 mbl = "/Volumes/crusoe-repo/data/marineboundarylayer/co2_mbl_2014-2024_dataset_combined.nc"
 P1_core = "{data_root}/working-vars/P1-processed/P1_coreArgo_application_features_yr2014-2023_acc20261016.nc"  # one row per L3 core profile (dim profid); SLP and MBL 2024 fixes
 P1_soccom = "{data_root}/working-vars/P1-processed/P1_bgcArgo_soccom5m_pHbias4pK014_features_yr2014-2024_acc20261109.nc"    # SOCCOM 5 m averages, profid within 1 h ("" if none)
-P1_socat = "{data_root}/working-vars/P1-processed/P1_socatv2025_features_yr2014-2024_acc20261016.nc"           # nearest clusterable profile (CT/SA above 500 dbar) within 7 d ("" if none)
+P1_socat = "{data_root}/working-vars/P1-processed/P1_socatv2025_features_yr2014-2024_max350km_fb14d.nc"       # nearest clusterable profile (CT/SA above 500 dbar) within 7 d, else 14 d; "" if none within 350 km
+# before 2026-11-11: P1_socatv2025_features_yr2014-2024_acc20261016.nc (7 d, no distance limit)
 
 # Clustering and regression files for any {pcm}, next to the ones in use
 P2_finder = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/PCM_finder_{pcm}.parquet"
 P2_fit = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/PCM_fit_{pcm}.json"
 P2_model = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/PCM_model_{pcm}.joblib"
 P2 = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_{dataset}_{pcm}.parquet"                 # all years, one file per P1 dataset
-P2_trainval = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_combined_trainval_socat_soccom_{pcm}.parquet"
-P2_test = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_combined_test_socat_soccom_{pcm}.parquet"
-P2_application = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_coreArgo_application_{pcm}.parquet"
-reg_trainval = "{data_root}/working-vars/regression-inputs/pHbias4pK014/combined_trainval_{pcm}.csv"
-reg_test = "{data_root}/working-vars/regression-inputs/pHbias4pK014/combined_test_{pcm}.csv"                # test_years samples (bgcArgo, SOCAT), written by regression-input-prep.py
-model_test = "{data_root}/working-vars/regression-inputs/pHbias4pK014/combined_test_bgc_socat_glodap_{pcm}.csv"  # reg_test plus GLODAP (CRUSOE-SOCarbon 3.5_test_data_prep.ipynb); run_model_application.py tests on it
-reg_application = "{data_root}/working-vars/regression-inputs/pHbias4pK014/coreArgo_application_{pcm}.csv"
-reg_info = "{data_root}/working-vars/regression-inputs/pHbias4pK014/regression_info_{pcm}.json"         # sea ice clusters and features, read by model-optimization
+P2_socat = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_socat_max350km_{pcm}.parquet"      # before 2026-11-11: P2_socat_{pcm}.parquet
+# The combined splits and regression inputs from the max350km SOCAT matchups (before 2026-11-11: the
+# same names in P2-clustered/{pcm}_pHbias4pK014/ and regression-inputs/pHbias4pK014/)
+P2_trainval = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014_max350km/P2_combined_trainval_socat_soccom_{pcm}.parquet"
+P2_test = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014_max350km/P2_combined_test_socat_soccom_{pcm}.parquet"
+P2_application = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014_max350km/P2_coreArgo_application_{pcm}.parquet"
+reg_trainval = "{data_root}/working-vars/regression-inputs/pHbias4pK014_max350km/combined_trainval_{pcm}.csv"
+reg_test = "{data_root}/working-vars/regression-inputs/pHbias4pK014_max350km/combined_test_{pcm}.csv"                # test_years samples (bgcArgo, SOCAT), written by regression-input-prep.py
+# No model_test (GLODAP no longer included): run_model_application.py tests the final models on reg_test.
+# before 2026-11-11: model_test = regression-inputs/pHbias4pK014/combined_test_bgc_socat_glodap_{pcm}.csv
+reg_application = "{data_root}/working-vars/regression-inputs/pHbias4pK014_max350km/coreArgo_application_{pcm}.csv"
+reg_info = "{data_root}/working-vars/regression-inputs/pHbias4pK014_max350km/regression_info_{pcm}.json"         # sea ice clusters and features, read by model-optimization
 model_results = "{data_root}/argoclare-runs"
 # Results copied back from NERSC, read by scripts/analysis/error_summary.py (default: model_results)
+# (still the pre-max350km results; point these at the new folders once those runs are copied back)
 cv_results = "{data_root}/argoclare-runs/cmp20261109_pK014"                # nested CV outercvErrors
 test_results = "{data_root}/argoclare-runs/application_RFR_realworld_pK014"  # application testPredictions
 
@@ -171,9 +183,8 @@ data_root = "/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression
 run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/southernOcean_CRUSOE_pHbias4pK014"
 
 [machines.nersc.files]
-reg_trainval = "{data_root}/pHbias4pK014/combined_trainval_{pcm}.csv"
-reg_test = "{data_root}/pHbias4pK014/combined_test_{pcm}.csv"
-model_test = "{data_root}/pHbias4pK014/combined_test_bgc_socat_glodap_{pcm}.csv"
-reg_application = "{data_root}/pHbias4pK014/coreArgo_application_{pcm}.csv"
-reg_info = "{data_root}/pHbias4pK014/regression_info_{pcm}.json"
+reg_trainval = "{data_root}/pHbias4pK014_max350km/combined_trainval_{pcm}.csv"
+reg_test = "{data_root}/pHbias4pK014_max350km/combined_test_{pcm}.csv"
+reg_application = "{data_root}/pHbias4pK014_max350km/coreArgo_application_{pcm}.csv"
+reg_info = "{data_root}/pHbias4pK014_max350km/regression_info_{pcm}.json"
 model_results = "/pscratch/sd/s/sangsong/argoclare_runs/results"

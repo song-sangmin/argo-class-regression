@@ -12,7 +12,8 @@ How a sample gets its class depends on the P1 file:
     ships (P1 has nearest_profid: socat): the class probabilities of the sample's nearest
         clusterable profile (create_P1_socat_features.py). Samples whose nearest profile has no
         class are filled the same way from the same cruise's classified samples within
-        [P2] ship_gapfill_days (1.5).
+        [P2] ship_gapfill_days (1.5). Samples whose match was rejected in P1 as too far
+        (colocation = 'too_far', [P1.socat] max_km_sep) are dropped first, without gap filling.
 Samples still without a class are dropped (counts printed and saved in the attributes).
 Nothing else is dropped: the training/test split, the exclusion of training profiles from the
 application set, and missing targets or features are left to regression/regression-input-prep.py.
@@ -51,6 +52,8 @@ def classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, 
     p2 = run.p2
     print(f'===> {dataset}: {p1_file}')
     df = read_p1(p1_file)
+    n_p1 = len(df)
+    n_too_far = 0
     ship = 'nearest_profid' in df.columns
     if dataset in run.section('P2.platform'):
         df['platform'] = run.section('P2.platform')[dataset]
@@ -58,6 +61,11 @@ def classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, 
 
     if ship:
         days = args.ship_days or p2.get('ship_gapfill_days', 1.5)
+        if 'colocation' in df.columns:
+            too_far = df['colocation'] == 'too_far'
+            n_too_far = int(too_far.sum())
+            df = df[~too_far].reset_index(drop=True)
+            print(f'{label}: dropped {n_too_far} samples whose nearest profile was too far (P1 max_km_sep)')
         df['platform_id'], df['sample_id'] = df['cruiseid'], df['sample_datetag']
         df = p2_classes.assign_from_profid(df, 'nearest_profid', finder, prob_cols)
         n_matched = int(df['class_assign'].notna().sum())
@@ -71,7 +79,9 @@ def classify(run, args, dataset, finder_file, finder, prob_cols, meta, p1_file, 
         how = f'from the same float within {days:g} days'
     n = len(df)
     df = p2_classes.drop_unclassified(df, label, n_matched, n_filled, how)
-    counts = {'samples': n, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n - len(df)}
+    counts = {'samples': n_p1, 'matched': n_matched, 'gapfilled': n_filled, 'dropped': n - len(df)}
+    if n_too_far:
+        counts['dropped_too_far'] = n_too_far
 
     datetag = datetime.now().strftime('%Y%m%d')
     years = df['datetime'].dt.year
