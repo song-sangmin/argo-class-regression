@@ -31,6 +31,9 @@ and the application P2 dataset (core), and:
        ([L3] qc_masked_vars), so target_qc_flags is not applied. Keys get the level appended
        (<sample_key>_p0100, application <profid>_p0100), and the csvs keep profid and pressure.
        A [files] reg_application ending in .parquet is written as parquet (large depth-resolved sets).
+With [regression] lat_range = [south, north] (degrees, inclusive), the train, test and application
+samples outside that latitude band are dropped before the year split (so the P2 splits, sea ice
+clusters and csvs all use the same band); also applied with --from-splits.
 Writes [files] reg_trainval (indexed by sample_key: platform_id + sample time to the minute;
 unique), the format read by run_dask_nested_cv.py (pd.read_csv(..., index_col=0)), with
 test_years the same for [files] reg_test (run_model_application.py tests the final models on it),
@@ -174,11 +177,23 @@ def add_levels(df, levels_df):
     return df.merge(levels_df, on='profid', how='inner')
 
 
+def lat_filter(df, cfg, label):
+    """Samples with latitude within [regression] lat_range [south, north] (inclusive), if set."""
+    if not cfg.get('lat_range'):
+        return df
+    south, north = sorted(cfg['lat_range'])
+    keep = df['latitude'].between(south, north)
+    print(f'{label}: dropped {int((~keep).sum())} of {len(df)} samples outside latitude {south:g} to {north:g}')
+    return df[keep].reset_index(drop=True)
+
+
 def regression_table(df, cfg, feat_list, target, label, levels_df=None):
     """A P2 split (trainval or test) as the model-optimization csv: class columns renamed,
     platform_indexer (and profid with cv_type = "profile"), target QC flags applied, rows missing
-    a feature or the target and duplicates dropped, indexed by sample_key. With levels_df
-    (depth_resolved), one row per profile and pressure level instead."""
+    a feature or the target and duplicates dropped, indexed by sample_key; samples outside
+    [regression] lat_range dropped. With levels_df (depth_resolved), one row per profile and
+    pressure level instead."""
+    df = lat_filter(df, cfg, label)
     df, prob_cols = rename_classes(df)
     df['platform_indexer'] = np.where(df['platform'].isin(float_platforms), 'wmoid', 'cruiseid')
     group_cols = []
@@ -281,7 +296,7 @@ def main():
     if args.from_splits:
         # ===== 1-2. Existing year splits and application set
         split_files = {name: run.input(f'P2_{name}') for name, _ in splits}
-        split_dfs = {name: pd.read_parquet(f) for name, f in split_files.items()}
+        split_dfs = {name: lat_filter(pd.read_parquet(f), cfg, f'P2_{name}') for name, f in split_files.items()}
         app_parquet = run.input('P2_application') if cfg.get('application') else None
         p2_attrs = split_dfs['trainval'].attrs
         pcm_params = p2_attrs.get('pcm_params', run.pcm)
@@ -296,7 +311,7 @@ def main():
         parts = [pd.read_parquet(f) for f in train_files]
         p2_attrs = parts[0].attrs
         pcm_params = p2_attrs.get('pcm_params', run.pcm)
-        combined = pd.concat(parts, ignore_index=True)
+        combined = lat_filter(pd.concat(parts, ignore_index=True), cfg, ' + '.join(cfg['train']))
         combined['year'] = combined['datetime'].dt.year
         prob_cols = prob_columns(combined)
         sources = ', '.join(os.path.basename(f) for f in train_files)
@@ -362,7 +377,8 @@ def main():
                 {
                     **common,
                     'title': f'P2 {name} dataset {tag}: {" and ".join(cfg["train"])} P1 samples with GMM class probabilities; '
-                    'samples without a class dropped.',
+                    'samples without a class dropped'
+                    + (f'; latitude {cfg["lat_range"]} only.' if cfg.get('lat_range') else '.'),
                     'p2_inputs': ', '.join(os.path.basename(f) for f in train_files),
                     'gapfill': '; '.join(p.attrs.get('gapfill', '') for p in parts),
                     'counts_all_years': {
@@ -379,6 +395,7 @@ def main():
             app = pd.read_parquet(app_file)
             check_columns(app, [c for c in feat_list if c not in level_cols], os.path.basename(app_file))
             app_attrs, n_app, n_excluded = dict(app.attrs), len(app), 0
+            app = lat_filter(app, cfg, cfg['application'])
             if cfg.get('exclude_training', True):
                 train = set()  # own profids of float training samples (trainval and test)
                 for d in split_dfs.values():
@@ -403,7 +420,9 @@ def main():
                 {
                     **common,
                     'title': f'P2 {cfg["application"]} application dataset {yrs}: P1 profiles with GMM class probabilities; '
-                    'profiles without a class dropped' + ('; training profiles excluded.' if n_excluded else '.'),
+                    'profiles without a class dropped'
+                    + (f'; latitude {cfg["lat_range"]} only' if cfg.get('lat_range') else '')
+                    + ('; training profiles excluded.' if n_excluded else '.'),
                     'p2_input': os.path.basename(app_file),
                     'gapfill': app_attrs.get('gapfill', ''),
                     'excluded_training_from': ', '.join(os.path.basename(f) for f in split_files.values()),
@@ -428,6 +447,7 @@ def main():
         'drop_features': cfg.get('drop_features', []),
         'target': target,
         'pressure_levels': levels,
+        'lat_range': cfg.get('lat_range'),
         'trainval_file': os.path.basename(reg_file),
         'n_trainval': len(trainval),
         **run.attrs(),
@@ -447,7 +467,7 @@ def main():
             {'test_file': os.path.basename(test_out or run.path('reg_test', ice_tag=ice_tag)), 'n_test': len(test)}
         )
     if app_parquet and app_out:
-        app = pd.read_parquet(app_parquet)
+        app = lat_filter(pd.read_parquet(app_parquet), cfg, 'P2_application')
         app, app_probs = rename_classes(app)
         assert app_probs == prob_cols, 'application and trainval have different clusters'
         app['platform_indexer'] = 'wmoid'

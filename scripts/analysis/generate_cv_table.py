@@ -4,7 +4,8 @@ Reads the crusoe_<ALGORITHM>_*_outercvErrors_*.csv files in the folder (written 
 run_dask_nested_cv.py) and writes a sidewaystable with RMSE, median absolute error and bias
 (prediction - truth) by assigned cluster and overall, one column per algorithm. Each cell is the
 calibrated prediction (lincal_pred) with the uncalibrated one (weighted_pred) in parentheses,
-the same errors as summarize_cv_errors.py.
+the same errors as summarize_cv_errors.py. Samples at or south of --min-latitude (default 70S,
+the southern edge of the mapping) are left out; pass --min-latitude -90 to keep them all.
 
 Usage:
     python generate_cv_table.py /path/to/argoclare-runs/cmp20261109_pK014
@@ -69,7 +70,7 @@ def join_names(names):
     return ', '.join(names[:-1]) + ', and ' + names[-1]
 
 
-def latex_table(results, counts, algorithms, label):
+def latex_table(results, counts, algorithms, label, min_latitude=None):
     n_alg = len(algorithms)
     blocks = ['c' * n_alg] * len(METRICS)
     header = ' & '.join(
@@ -83,6 +84,8 @@ def latex_table(results, counts, algorithms, label):
         '(prediction $-$ observation). Values are for the linearly calibrated prediction, '
         'with the uncalibrated prediction in parentheses.'
     )
+    if min_latitude is not None and min_latitude > -90:
+        caption += f' Samples south of {abs(min_latitude):g}$^\\circ$S are excluded.'
 
     def row(key):
         cells = [fmt_cell(results[algorithm][key], metric) for metric in METRICS for algorithm in algorithms]
@@ -121,6 +124,12 @@ def main():
     )
     parser.add_argument('--target', default='delta_pco2', help='Target column (default: delta_pco2)')
     parser.add_argument('--label', default='tab:cverror_algorithms', help='LaTeX label')
+    parser.add_argument(
+        '--min-latitude',
+        type=float,
+        default=-70,
+        help='Keep samples north of this latitude (default: %(default)s; -90 keeps all)',
+    )
     parser.add_argument('--out', default=None, help='Output .tex file (default: <folder>/<folder name>_cvTable.tex)')
     args = parser.parse_args()
 
@@ -128,13 +137,18 @@ def main():
     results, counts = {}, None
     for algorithm, path in find_runs(folder, args.algorithms).items():
         data = pd.read_csv(path, index_col=0)
+        n_all = len(data)
+        data = data[data['latitude'] > args.min_latitude]
         results[algorithm], run_counts = group_metrics(data, args.target)
         if counts is not None and run_counts != counts:
             print(f'Warning: {algorithm} has different sample counts per cluster; n column uses the first run')
         counts = counts or run_counts
-        print(f'Loaded {algorithm}: {len(data)} rows from {os.path.basename(path)}')
+        print(
+            f'Loaded {algorithm}: {len(data)} of {n_all} rows north of {args.min_latitude:g} '
+            f'from {os.path.basename(path)}'
+        )
 
-    table = latex_table(results, counts, args.algorithms, args.label)
+    table = latex_table(results, counts, args.algorithms, args.label, args.min_latitude)
     out = args.out or os.path.join(folder, os.path.basename(folder) + '_cvTable.tex')
     with open(out, 'w') as file:
         file.write(table)

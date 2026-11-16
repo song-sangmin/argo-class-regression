@@ -3,7 +3,7 @@ trained on the same data without clustering.
 
 Reads [files] P2_trainval (written by regression-input-prep.py) and makes the same table as
 regression-input-prep.py's reg_trainval (same features, target QC, dropped rows and sample_key
-index), then replaces the class info with a single cluster:
+index, and samples outside [regression] lat_range dropped), then replaces the class info with a single cluster:
     cluster          -> gmm_cluster (kept to compare errors by GMM class afterwards)
     cluster{k}_prob  -> dropped
     cluster = 1, cluster1_prob = 1.0
