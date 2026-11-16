@@ -18,6 +18,7 @@ python clustering/fit_argo_clustering.py --config $C                       # P2_
 python synthetic-processing/apply_P2_synthetic_clustering.py --config $C   # P2_syn_trainval (synBgcArgo + synSOCAT)
 python synthetic-processing/apply_P2_synthetic_synCore_clustering.py --config $C   # P2_core (application set)
 python regression/regression-input-prep.py --config $C                     # regression csvs (no adt; sea ice clusters in reg_info)
+python synthetic-processing/check-duplicate-extraction.py --config $C --overwrite   # drop duplicate synthetic samples from the csvs
 ```
 
 The files in use (pc8_gmm6_dbar500) are listed in the config, so each step stops before overwriting
@@ -42,3 +43,8 @@ Notes
 - The GMM is refit on the synthetic profiles with the same parameters as the real data, so
   synthetic class numbers (north to south by mean latitude) are not the real classes.
 - Full L3 run: ~330k profiles, roughly 45 min with 8 workers.
+- Duplicate samples: the extraction matches each real float to the nearest model particle at deployment,
+  so floats deployed together can share a particle and give identical samples under different WMOs.
+  `check-duplicate-extraction.py` removes them from the regression csvs (repeats within trainval, within
+  the core application set, and core profiles that copy a trainval sample, synBgcArgo or synSOCAT). Run it after
+  every regression-input-prep.py run; without --overwrite it only prints the counts.
