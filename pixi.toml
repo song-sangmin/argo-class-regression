@@ -91,6 +91,11 @@ description = "The whole Drake Passage example (example-workflow-drake.md), abou
 depends-on = ["get-example-data", "float-import", "era5-points", "feature-addition", "clustering",
               "regression-prep", "modeling"]
 
+[tasks.test]
+description = "Test for Github Actions"
+depends-on = ["example"]
+
+
 [dependencies]
 python = ">=3.14.0,<3.16"
 numpy = ">=2.5.4,<3"

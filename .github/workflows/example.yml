@@ -1,0 +1,23 @@
+name: example
+run-name: Drake Passage example (pixi run example)
+on:
+  push:
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the run still in progress
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pixi-example:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: prefix-dev/setup-pixi@v0.11.3
+        with:
+          cache: true
+          # Fail if pixi.lock is out of date with pixi.toml instead of re-solving
+          locked: true
+      - run: pixi run example
