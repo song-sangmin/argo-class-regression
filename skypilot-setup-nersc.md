@@ -17,7 +17,7 @@ Host perlmutter*.nersc.gov saul*.nersc.gov dtn*.nersc.gov
 - Once this is added, you can connect directly in Terminal using `ssh perlmutter.nersc.gov`. This will connect you to a login node. 
 
 
-- Open the file `~/.slurm/config` and add the following: 
+- Open the file `~/.slurm/config.yaml` and add the following: 
 
 ```
 Host perlmutter
@@ -27,7 +27,8 @@ Host perlmutter
     IdentitiesOnly yes
 ```
 
-- Open the file `~/.sky/config` and add the following: 
+- Open the file `~/.sky/config.yaml` and add the following: 
+(Note you must specify cpu_partition for NERSC here, or the run will crash)
 
 ```
 slurm:
@@ -35,8 +36,11 @@ slurm:
     - perlmutter
     # - tillicum
   cluster_configs:
+  cluster_configs:
+    # $SCRATCH is expanded on the login node (set by default on klone and tillicum).
     perlmutter:
-      workdir: $SCRATCH/skypilot     # /pscratch/sd/s/sangsong/skypilot
+      workdir: $SCRATCH/skypilot
+      cpu_partition: regular_milan_ss11
 ```
 
 # Starting a session
@@ -44,9 +48,10 @@ slurm:
 - To login (expires each day), from any Terminal:
 
 ```
-sshproxy.sh -u sangsong
 ssh perlmutter.nersc.gov
 ```
+
+Check your available groups with `iris`
 
 # Notes on differences from NERSC Jupyterhub setup
 
