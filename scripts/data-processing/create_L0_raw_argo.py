@@ -80,7 +80,7 @@ def main():
         if cfg['source'] == 'gdac':
             argopy.set_options(src='gdac', gdac=run.input('gdac'))
         else:
-            argopy.set_options(src='erddap')  # Ifremer database, updated daily
+            argopy.set_options(src='erddap', api_timeout=300)  # Ifremer database, updated daily
         ds = 'phy' if dataset == 'core' else 'bgc'
         fetcher_kwargs = dict(run.section('L0.fetcher'))
         if fetcher_kwargs.get('progress') and not sys.stdout.isatty():

@@ -20,4 +20,19 @@ jobs:
           cache: true
           # Fail if pixi.lock is out of date with pixi.toml instead of re-solving
           locked: true
+      # Argo L0 downloads (Ifremer ERDDAP), restored here and saved after a successful run;
+      # float-import runs with --skip-existing, so cached years are not fetched again
+      - uses: actions/cache@v6
+        with:
+          path: x_data/example_drake/L0/
+          key: example-drake-L0-${{ hashFiles('configs/example_drake.toml') }}
       - run: pixi run example
+      # Run folder <data_root>/<name>/ from configs/example_drake.toml; uploaded even if
+      # the example fails, to see how far it got
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: example_drake
+          path: x_data/example_drake/
+          if-no-files-found: warn
+          retention-days: 14
