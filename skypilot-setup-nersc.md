@@ -61,6 +61,9 @@ Check your available groups with `iris`
 
 
 ```
+sky launch templates/perlmutter-test.yaml
+
+
 sky launch templates/perlmutter-nestedcv.yaml --cluster cv-xgb \
   --env ALGORITHM=XGB --env GRID=xgb_full --env TAG=cmp20261109
 sky down cv-xgb      # when done; Slurm clusters don't autostop
