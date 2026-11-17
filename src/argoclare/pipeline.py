@@ -64,6 +64,7 @@ DEFAULT_FILES = {
     'socat_L2': '{run_dir}/socat/socat_resampled_open_ocean_INDEX.nc',
     'mbl': '{run_dir}/ancillary/co2_mbl_combined.nc',
     'P1': '{run_dir}/P1/P1_{dataset}_features.nc',
+    'era5_points': '{run_dir}/P1/era5_points_{dataset}.parquet',
     'P2_finder': '{run_dir}/P2/{pcm}/PCM_finder_{pcm}.parquet',
     'P2_fit': '{run_dir}/P2/{pcm}/PCM_fit_{pcm}.json',
     'P2_model': '{run_dir}/P2/{pcm}/PCM_model_{pcm}.joblib',
@@ -205,6 +206,7 @@ def fill_model_args(args):
             print(f'Warning: [files] model_test does not exist, so there is no test set: {test_file}')
     if args.savepath is None:
         args.savepath = run.path('model_results')
+    args.results_prefix = run.results_prefix
     if getattr(args, 'cv_type', 0) is None:
         args.cv_type = run.section('regression').get('cv_type')
     for key in ('n_outer', 'n_inner', 'n_folds'):  # fold counts, e.g. [regression] n_outer = 5
@@ -338,6 +340,11 @@ class Run:
         if not all(k in p2 for k in ['n_pca', 'n_gmm', 'dbar_limit']):
             return None
         return pcm_tag(p2['n_pca'], p2['n_gmm'], p2['dbar_limit'], p2.get('exclude_years'))
+
+    @property
+    def results_prefix(self):
+        """Start of the model result file names: [regression] results_prefix, else [run] name."""
+        return self.section('regression').get('results_prefix', self.name)
 
     # %% Files
 

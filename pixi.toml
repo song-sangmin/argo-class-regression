@@ -8,6 +8,7 @@ version = "0.1.0"
 
 [environments]
 dev = ["dev"]
+arraylake = ["arraylake"]
 
 [tasks.get-example-data]
 cmd = "test -d example-data/.git || git clone --depth 1 https://github.com/song-sangmin/argo-class-regression-data.git example-data"
@@ -36,6 +37,11 @@ python scripts/data-processing/create_L3_gridded_coreArgo.py --config {{ config 
 python scripts/data-processing/create_L3_gridded_bgcArgo.py --config {{ config }} --skip-existing
 {%- endif %}
 """
+
+[tasks.era5-points]
+description = "ERA5 from Earthmover at each float profile, for [P1.era5] source = \"public\" (or \"earthmover\", run with -e arraylake)"
+args = [{ arg = "config", default = "configs/example_drake.toml" }, { arg = "datasets", default = "core bgc" }]
+cmd = "python scripts/data-processing/create_P1_era5_points.py --config {{ config }} --datasets {{ datasets }} --skip-existing"
 
 [tasks.feature-addition]
 description = "P1: regression features at each float profile"
@@ -82,10 +88,11 @@ cmd = "python scripts/analysis/error_summary.py --config {{ config }} --algorith
 
 [tasks.example]
 description = "The whole Drake Passage example (example-workflow-drake.md), about 5 min"
-depends-on = ["get-example-data", "float-import", "feature-addition", "clustering", "regression-prep", "modeling"]
+depends-on = ["get-example-data", "float-import", "era5-points", "feature-addition", "clustering",
+              "regression-prep", "modeling"]
 
 [dependencies]
-python = ">=3.15.0,<3.16"
+python = ">=3.14.0,<3.16"
 numpy = ">=2.5.4,<3"
 scipy = ">=1.18.1,<2"
 pandas = ">=3.0.6,<4"
@@ -106,6 +113,8 @@ tqdm = ">=4.70.1,<5"
 pip = ">=26.2.2,<27"                # argopy runs `python -m pip list` at import
 sphinx = ">=9.2.0,<10"
 make = ">=4.4.1,<5"
+icechunk = ">=2.3.1,<3"            # ERA5 on Earthmover ([P1.era5] source = "public")
+pcodec = ">=1.1.0,<2"               # codec of the Earthmover ERA5 arrays
 
 [pypi-dependencies]
 argoclare = { path = ".", editable = true }
@@ -122,3 +131,8 @@ identify = ">=2.6.15,<3"   # pre-commit needs a recent identify (jupyter file ty
 [feature.dev.tasks]
 format = { cmd = "ruff format src scripts", description = "Format the code with ruff (settings in pyproject.toml)" }
 lint = { cmd = "ruff check src scripts", description = "Check the code with ruff (settings in pyproject.toml)" }
+
+# [P1.era5] source = "earthmover" (Arraylake repo, Earthmover login); arraylake needs Python 3.14
+[feature.arraylake.dependencies]
+python = "3.14.*"
+arraylake = "*"

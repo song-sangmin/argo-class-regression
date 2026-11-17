@@ -12,7 +12,9 @@ pressure level:
 Only the features the run uses are added: [P1] features, plus the [regression] features and
 target (the time variables, max_solar_rad and log_mld always). The gridded files the others
 need (p1_features.FILE_COLUMNS) must exist for every year; the rest are not read. Without
-features in the config, all of them are added.
+features in the config, all of them are added. With [P1.era5] source = "public" or "earthmover",
+the ERA5 features (and SST_era5) come from [files] era5_points, made first by
+create_P1_era5_points.py.
 Features are looked up with the vectorized functions in p1_features.py (see there for the
 differences from argoclare.preprocessing, including the sea level pressure longitude fix).
 For each of --datasets (in the order given), years ([P1.<dataset>] years, else [run] years) are
@@ -106,7 +108,7 @@ def main():
                 dataset,
                 years,
                 run.input('L3_index', dataset),
-                p1_features.run_feature_files(run, years),
+                p1_features.run_feature_files(run, years, dataset=dataset),
                 run.output('P1', dataset),
             )
         )
