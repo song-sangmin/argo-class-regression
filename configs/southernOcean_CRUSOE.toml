@@ -99,6 +99,7 @@ socat = "socatv2025"
 
 # %% Regression inputs (regression/regression-input-prep.py)
 [regression]
+results_prefix = "crusoe"            # model result files crusoe_<ALGORITHM>_... (default: [run] name)
 train = ["soccom", "socat"]        # P2 datasets combined for training, in this order
 trainval_years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
 test_years = [2024]

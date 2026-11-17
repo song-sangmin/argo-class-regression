@@ -1,6 +1,6 @@
 """Save a LaTeX table of outer fold validation errors by cluster for each algorithm in a folder.
 
-Reads the crusoe_<ALGORITHM>_*_outercvErrors_*.csv files in the folder (written by
+Reads the <prefix>_<ALGORITHM>_*_outercvErrors_*.csv files in the folder (written by
 run_dask_nested_cv.py) and writes a sidewaystable with RMSE, median absolute error and bias
 (prediction - truth) by assigned cluster and overall, one column per algorithm. Each cell is the
 calibrated prediction (lincal_pred) with the uncalibrated one (weighted_pred) in parentheses,
@@ -23,11 +23,12 @@ METRICS = {'rmse': 'RMSE', 'medae': 'MedAE', 'bias': 'Bias'}
 
 
 def find_runs(folder, algorithms):
-    """{algorithm: outercvErrors path}, from file names crusoe_<ALGORITHM>_<grid>_<tag>_outercvErrors_*.csv"""
+    """{algorithm: outercvErrors path}, from file names <prefix>_<ALGORITHM>_<grid>_<tag>_outercvErrors_*.csv
+    (the first word of the name that is one of the algorithms; the prefix may have underscores)"""
     files = {}
     for path in sorted(glob.glob(os.path.join(folder, '*_outercvErrors_*.csv'))):
-        algorithm = run_name(path).split('_')[1]
-        if algorithm not in algorithms:
+        algorithm = next((word for word in run_name(path).split('_') if word in algorithms), None)
+        if algorithm is None:
             continue
         if algorithm in files:
             raise SystemExit(f'More than one {algorithm} run in {folder}: {files[algorithm]} and {path}')

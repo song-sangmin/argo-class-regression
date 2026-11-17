@@ -53,6 +53,7 @@ ship_gapfill_days = 1.5
 
 # %% Regression inputs
 [regression]
+results_prefix = "crusoe"            # model result files crusoe_<ALGORITHM>_... (default: [run] name)
 train = ["syn_trainval"]           # the synthetic trainval file (synBgcArgo + synSOCAT, already subsampled)
 trainval_years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
 test_years = []
@@ -69,7 +70,7 @@ cv_type = "platform"           # model-optimization folds: "platform" (whole flo
 # %% Files
 [files]
 # External inputs
-syn_merged = "{data_root}/LIGHT-bgcArgo/synArgo_realworld_matches_merged.nc"        # merged synthetic float netcdf
+syn_merged = "{data_root}/LIGHT-bgcArgo/synArgo_realworld_matches_merged.nc"        # merged 2000-2023 synthetic float netcdf
 syn_socat = "{data_root}/working-vars/synthetic/synSOCAT-daily_matches_acc20261016.nc"   # PKG-synthetic-extract/extract_SOCAT.py
 real_P1_soccom = "{data_root}/working-vars/P1-processed/P1_bgcArgo_soccom5m_features_yr2014-2024_acc20261016.nc"  # SOCCOM wmoids
 real_P1_core = "{data_root}/working-vars/P1-processed/P1_coreArgo_application_features_yr2014-2023_acc20261016.nc" # core wmoids

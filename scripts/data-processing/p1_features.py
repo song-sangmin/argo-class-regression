@@ -20,7 +20,13 @@ argoclare preprocessing.add_sea_level_pressure().
 Gridded files are passed as paths with {yr} (from the run config, see pipeline.Run.feature_files()),
 since joblib workers re-import this module. Only the files that the run's features need are
 used (needed_files(), from [P1] features and the [regression] features and target).
+With [P1.era5] source = "public" or "earthmover" (ERA5 on Earthmover, see ERA5_SOURCES), the ERA5
+features (sea level pressure, wind speed, and SST_era5, which only comes from Earthmover) are taken
+from [files] era5_points instead: the ERA5 values at each sample, looked up by
+create_P1_era5_points.py (add_era5_points()).
 """
+
+import os
 
 import gsw
 import numpy as np
@@ -42,6 +48,14 @@ FILE_COLUMNS = {
     'wind': ['wind_speed'],
     'seaice': ['sea_ice'],
 }
+# [P1.era5] sources that read ERA5 on Earthmover: its public bucket (no account) or an Arraylake
+# repo (Earthmover login). Both are looked up into [files] era5_points by create_P1_era5_points.py.
+ERA5_SOURCES = ('public', 'earthmover')
+# ERA5 inputs that these sources take from [files] era5_points, the ERA5 variables each needs
+# there, and the P1 columns that need sst (only from Earthmover)
+ERA5_VARS = {'slp': ['msl'], 'wind': ['u10', 'v10'], 'sst': ['sst']}
+EARTHMOVER_COLUMNS = {'sst': ['SST_era5']}
+ERA5_KEY = ['datetime', 'latitude', 'longitude']  # era5_points rows match P1 samples on these
 
 
 def needed_files(features):
@@ -57,15 +71,44 @@ def needed_files(features):
     return names | {'slp'} if 'mbl' in names else names
 
 
-def run_feature_files(run, years, always=()):
-    """The gridded files a run's P1 step needs (plus `always`), checked for every year."""
+def earthmover_names(run, always=()):
+    """ERA5 inputs (ERA5_VARS names) a run takes from Earthmover: none unless [P1.era5] source is
+    one of ERA5_SOURCES; then those its P1 features need (plus `always`), sst included."""
+    features = run.p1_features()
+    source = run.section('P1.era5').get('source', 'file')
+    if source not in ('file', *ERA5_SOURCES):
+        raise SystemExit(f'[P1.era5] source = "{source}": use "file", "public" or "earthmover"')
+    if source == 'file':
+        if features and any(f in cols for cols in EARTHMOVER_COLUMNS.values() for f in features):
+            raise SystemExit('SST_era5 only comes from Earthmover: set [P1.era5] source = "public" or "earthmover"')
+        return set()
+    names = needed_files(features) | set(always)
+    names |= {n for n, cols in EARTHMOVER_COLUMNS.items() if features is None or any(f in cols for f in features)}
+    return names & set(ERA5_VARS)
+
+
+def run_feature_files(run, years, always=(), dataset=None):
+    """The gridded files a run's P1 step needs (plus `always`), checked for every year. With
+    [P1.era5] source = "public" or "earthmover", the ERA5 ones are replaced by [files] era5_points for `dataset`."""
     features = run.p1_features()
     names = needed_files(features) | set(always)
+    era5 = earthmover_names(run, always)
     print(
         f'P1 features: {"all" if features is None else ", ".join(features)}; gridded inputs: '
-        + (', '.join(n for n in FILE_COLUMNS if n in names) or 'none')
+        + (', '.join(n for n in FILE_COLUMNS if n in names - era5) or 'none')
+        + (f'; from Earthmover: {", ".join(v for n in sorted(era5) for v in ERA5_VARS[n])}' if era5 else '')
     )
-    return run.feature_files(years, names)
+    files = run.feature_files(years, names - era5)
+    if era5:
+        path = run.path('era5_points', dataset)
+        if not os.path.exists(path):
+            raise SystemExit(
+                f'Missing the ERA5 values for {dataset} ([files] era5_points): {path}\nLook them up first with '
+                f'`pixi run era5-points {run.config_path} {dataset}` (`pixi run -e arraylake ...` for source = '
+                f'"earthmover"), or use local files with [P1.era5] source = "file"'
+            )
+        files['era5_points'], files['era5_names'] = run.input('era5_points', dataset), sorted(era5)
+    return files
 
 
 # %% Grid sampling
@@ -125,6 +168,30 @@ def add_sea_level_pressure(df, yr, slp_file):
         },
     )
     df['atmos_pres_atm'] = df['atmos_pres_Pa'] / 1013.25 / 100
+    return df
+
+
+def add_era5_points(df, points_file, names):
+    """ERA5 features from [files] era5_points (create_P1_era5_points.py: Earthmover ERA5 at the
+    nearest 0.25 deg grid point and hour of each sample), for the ERA5_VARS names given:
+    slp -> atmos_pres_Pa, atmos_pres_atm; wind -> wind_speed; sst -> SST_era5 (deg C)."""
+    need = [v for n in names for v in ERA5_VARS[n]]
+    points = pd.read_parquet(points_file)
+    missing = [v for v in need if v not in points.columns]
+    if missing:
+        raise SystemExit(f'{points_file} has no {", ".join(missing)}: rerun create_P1_era5_points.py')
+    points = points[ERA5_KEY + need].drop_duplicates(ERA5_KEY)
+    found = df[ERA5_KEY].merge(points, on=ERA5_KEY, how='left', indicator=True)
+    n_missing = int((found['_merge'] == 'left_only').sum())
+    if n_missing:
+        raise SystemExit(f'{n_missing} samples are not in {points_file}: rerun create_P1_era5_points.py')
+    if 'slp' in names:
+        df['atmos_pres_Pa'] = found['msl'].values.astype(float)
+        df['atmos_pres_atm'] = df['atmos_pres_Pa'] / 1013.25 / 100
+    if 'wind' in names:
+        df['wind_speed'] = np.sqrt(found['u10'].values ** 2 + found['v10'].values ** 2)
+    if 'sst' in names:
+        df['SST_era5'] = found['sst'].values.astype(float) - 273.15
     return df
 
 
@@ -230,9 +297,11 @@ def save_netcdf(df, dim, path, attrs, coords=('datetime', 'latitude', 'longitude
 
 
 def add_all_features(df, yr, files, ref_time=ref_time, seaice_days_before=None):
-    """P1 features for samples from one year. files: paths for any of {slp, mbl, adt, wind, seaice}
-    (pipeline.Run.feature_files()); features from a file that is not given are left out."""
+    """P1 features for samples from one year. files: paths for any of {slp, mbl, adt, wind, seaice},
+    or era5_points with era5_names (run_feature_files()); features from a file that is not given are left out."""
     df = add_time_vars(df, ref_time)
+    if 'era5_points' in files:  # [P1.era5] source = "public" or "earthmover"
+        df = add_era5_points(df, files['era5_points'], files['era5_names'])
     if 'slp' in files:
         df = add_sea_level_pressure(df, yr, files['slp'])
     if 'mbl' in files:

@@ -47,7 +47,10 @@ def parse_args():
     parser.add_argument('algorithm', choices=procedures_cv.ALGORITHMS)
     parser.add_argument('grid', choices=sorted(TUNING_GRIDS), help='Name of tuning grid in tuning_grids.py')
     parser.add_argument(
-        '--run-name', default=None, help='Output file prefix (default: crusoe_<ALGORITHM>_<cv_type>CV_grid_<grid>)'
+        '--run-name',
+        default=None,
+        help='Output file prefix (default: <prefix>_<ALGORITHM>_<cv_type>CV_grid_<grid>; prefix: [regression] '
+        'results_prefix or [run] name with --config, else crusoe)',
     )
     parser.add_argument(
         '--n-outer',
@@ -123,7 +126,8 @@ def parse_args():
 def main():
     args = parse_args()
     tuning_grid = TUNING_GRIDS[args.grid]
-    run_name = args.run_name or f'crusoe_{args.algorithm}_{args.cv_type}CV_grid_{args.grid}'
+    prefix = getattr(args, 'results_prefix', None) or 'crusoe'
+    run_name = args.run_name or f'{prefix}_{args.algorithm}_{args.cv_type}CV_grid_{args.grid}'
     savepath = os.path.join(args.savepath, '')  # outfile is appended directly to savepath
     os.makedirs(savepath, exist_ok=True)
     run_feat_list = [x for x in (getattr(args, 'features', None) or feat_list) if x not in args.drop_features]
