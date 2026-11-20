@@ -83,6 +83,10 @@ def main():
             argopy.set_options(src='erddap', api_timeout=300)  # Ifremer database, updated daily
         ds = 'phy' if dataset == 'core' else 'bgc'
         fetcher_kwargs = dict(run.section('L0.fetcher'))
+        if cfg['source'] == 'erddap' and ds == 'bgc':
+            # The erddap bgc fetcher reads the GDAC synthetic profile index (~65 MB) for every
+            # year; keep it in the argopy cache so it is downloaded once per run
+            fetcher_kwargs.setdefault('cache', True)
         if fetcher_kwargs.get('progress') and not sys.stdout.isatty():
             print('No terminal (batch job or redirected output): argopy progress display off')
             fetcher_kwargs['progress'] = False
