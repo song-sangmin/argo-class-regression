@@ -2,11 +2,23 @@ name: example
 run-name: Drake Passage example (pixi run example)
 on:
   push:
+    # Edits to notes and docs only don't rerun the example
+    paths-ignore:
+      - '**.md'
   workflow_dispatch:
+    inputs:
+      fresh-download:
+        description: Download L0 again instead of using the cache
+        type: boolean
+        default: false
+  # Fresh downloads (no L0 cache) on the 1st and 15th of each month at 06:00 UTC, to catch
+  # changes at Ifremer, argopy or Earthmover; runs on the default branch (main) only
+  schedule:
+    - cron: '0 6 1,15 * *'
 
-# A newer push to the same branch cancels the run still in progress
+# A newer push to the same branch cancels the run still in progress (but not a scheduled run)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -23,10 +35,22 @@ jobs:
       # Argo L0 downloads (Ifremer ERDDAP), restored here and saved after a successful run;
       # float-import runs with --skip-existing, so cached years are not fetched again
       - uses: actions/cache@v6
+        if: github.event_name != 'schedule' && !inputs.fresh-download
         with:
           path: x_data/example_drake/L0/
           key: example-drake-L0-${{ hashFiles('configs/example_drake.toml') }}
       - run: pixi run example
+      # Nested CV and test errors on the run's page; the step summary is kept as long as the
+      # logs, after the artifact below has expired
+      - name: Error summary
+        shell: bash  # with pipefail, so an error-summary failure is not hidden by tee
+        run: |
+          {
+            echo '## Model errors (oxygen, umol/kg)'
+            echo '```'
+            pixi run error-summary
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       # Run folder <data_root>/<name>/ from configs/example_drake.toml; uploaded even if
       # the example fails, to see how far it got
       - uses: actions/upload-artifact@v7
