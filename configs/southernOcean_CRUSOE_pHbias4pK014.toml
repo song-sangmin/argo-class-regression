@@ -11,6 +11,9 @@
 # 2026-11-11: SOCAT matchups limited to km_sep <= 350 km, with a +-14 day fallback ([P1.socat]).
 # P1_socat, P2_socat, the P2 splits and the regression inputs now go to new *_max350km files and
 # folders; the Nov 9 files they replace are kept (paths in the comments next to each entry).
+#
+# 2026-11-12: regression samples limited to 35-70S ([regression] lat_range). The P2 splits and
+# regression inputs now go to *_max350km folders
 
 [run]
 name = "southernOcean_CRUSOE_pHbias4pK014"
@@ -105,6 +108,7 @@ socat = "socatv2025"
 
 # %% Regression inputs (regression/regression-input-prep.py)
 [regression]
+results_prefix = "crusoe"            # model result files crusoe_<ALGORITHM>_... (default: [run] name)
 train = ["soccom", "socat"]        # P2 datasets combined for training, in this order
 trainval_years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
 test_years = [2024]
@@ -115,6 +119,7 @@ drop_features = []
 target = "delta_pco2"
 ice_threshold = 0.1                # sea_ice above this counts as an ice sample
 min_ice_profiles = 10              # ice samples needed to call a cluster a sea ice cluster
+lat_range = [-70, -35]             # keep train, test and application samples within this latitude band (inclusive)
 cv_type = "platform"           # model-optimization folds: "platform" (whole floats/cruises held out), "profile" (whole profiles), "kmeans" (regions)
 
 # %% Files
@@ -155,8 +160,9 @@ P2_fit = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/PCM_fit_{pcm}
 P2_model = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/PCM_model_{pcm}.joblib"
 P2 = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_{dataset}_{pcm}.parquet"                 # all years, one file per P1 dataset
 P2_socat = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014/P2_socat_max350km_{pcm}.parquet"      # before 2026-11-11: P2_socat_{pcm}.parquet
-# The combined splits and regression inputs from the max350km SOCAT matchups (before 2026-11-11: the
-# same names in P2-clustered/{pcm}_pHbias4pK014/ and regression-inputs/pHbias4pK014/)
+# The combined splits and regression inputs from the max350km SOCAT matchups, 35-70S (before 2026-11-12:
+# the same names in *_max350km/ without the latitude band; before 2026-11-11: in P2-clustered/{pcm}_pHbias4pK014/
+# and regression-inputs/pHbias4pK014/)
 P2_trainval = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014_max350km/P2_combined_trainval_socat_soccom_{pcm}.parquet"
 P2_test = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014_max350km/P2_combined_test_socat_soccom_{pcm}.parquet"
 P2_application = "{data_root}/working-vars/P2-clustered/{pcm}_pHbias4pK014_max350km/P2_coreArgo_application_{pcm}.parquet"
@@ -183,6 +189,7 @@ data_root = "/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression
 run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/southernOcean_CRUSOE_pHbias4pK014"
 
 [machines.nersc.files]
+# the *_max350km folders here hold the 35-70S (lat_range) inputs since 2026-11-12, replacing the Nov 11 ones
 reg_trainval = "{data_root}/pHbias4pK014_max350km/combined_trainval_{pcm}.csv"
 reg_test = "{data_root}/pHbias4pK014_max350km/combined_test_{pcm}.csv"
 reg_application = "{data_root}/pHbias4pK014_max350km/coreArgo_application_{pcm}.csv"

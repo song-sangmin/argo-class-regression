@@ -29,6 +29,7 @@ for `delta_pco2`. `create_mbl_co2_dataset.py` is only needed when the MBL CO2 is
 | L2 open ocean | `create_L2_masked_argo.py --datasets core bgc` | `L2` |
 | L3 regridded | `create_L3_gridded_coreArgo.py`, `create_L3_gridded_bgcArgo.py` | `L3_data`, `L3_index` |
 | MBL CO2 (if needed) | `create_mbl_co2_dataset.py` | `mbl` |
+| ERA5 from Earthmover (optional) | `create_P1_era5_points.py --datasets core bgc` (with `[P1.era5] source = "public"`, or `"earthmover"` in pixi env `arraylake`; before P1) | `era5_points_core`, `era5_points_bgc` |
 | P1 float features | `create_P1_float_features.py --datasets core bgc` | `P1_core`, `P1_bgc` |
 | P1 SOCCOM (optional) | `create_P1_soccom_features.py` | `P1_soccom` |
 | L2 SOCAT (optional) | `create_L2_resampled_masked_socat.py` | `socat_L2` |

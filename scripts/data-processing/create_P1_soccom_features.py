@@ -126,7 +126,7 @@ def main():
     years = run.years('P1.soccom')
     soccom_dir = run.input('soccom_dir')
     indexes = [run.input('L3_index', 'core'), run.input('L3_index', 'bgc')]
-    files = p1_features.run_feature_files(run, years, always={'slp', 'mbl'})
+    files = p1_features.run_feature_files(run, years, always={'slp', 'mbl'}, dataset='soccom')
     savefile = run.output('P1', 'soccom')
 
     soccom_df = read_soccom_averages(soccom_dir, depth, f'{min(years)}-01-01', f'{max(years) + 1}-01-01', run.in_box)

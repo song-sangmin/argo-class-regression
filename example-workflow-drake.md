@@ -2,11 +2,13 @@
 
 This guide runs the whole pipeline on a small example: five years (2018–2022) of core and BGC Argo
 floats in the Drake Passage (70°W–50°W, 65°S–55°S, 0–1000 dbar). The whole run, from download to
-models, takes ~5-10 minutes on a laptop (dependent on download speed from ERDDAP). The example clusters all float profiles
-by their temperature and salinity structure, then trains one regression model per cluster. Each
-model predicts surface **oxygen** on BGC floats from **CT, SA and max_solar_rad** (clear-sky
-solar radiation), and the trained models are applied to the core floats, which have no oxygen
-sensor.
+models, takes ~5-10 minutes on a laptop (dependent on download speed from ERDDAP), plus 1-2 minutes
+to look up ERA5 on Earthmover. The example clusters all float profiles by their temperature and
+salinity structure, then trains one regression model per cluster. Each model predicts **oxygen
+from 0 to 1000 dbar (every 10 dbar)** on BGC floats from **pressure, CT, SA and sigma0** on each
+level and the profile's **max_solar_rad** (clear-sky solar radiation), **wind_speed** and
+**atmos_pres_atm** (ERA5, from Earthmover's public bucket). The trained models are applied to every level of the
+core floats, which have no oxygen sensor.
 
 Every setting lives in one file, `configs/example.toml`. Every script takes `--config <file>`,
 writes to a run folder, and never overwrites existing outputs unless you pass `--overwrite`.
@@ -33,6 +35,24 @@ python -m pip install -e .                  # installs the argoclare package (ed
 
 Python 3.11 or newer is needed, because the configs are read with `tomllib`.
 
+**Earthmover (ERA5).** The example takes its ERA5 wind and sea level pressure from
+[Earthmover](https://earthmover.io)'s public copy of ERA5 (an Icechunk repository in a public S3
+bucket), read anonymously with the `icechunk` package, so no account is needed.
+
+If you have an Earthmover account, you can read the same data from an Arraylake repo instead
+(`[P1.era5] source = "earthmover"` with `repo`). The `arraylake` package runs in its own pixi
+environment (`arraylake`, Python 3.14); log in once (the token is saved in your home folder):
+
+```bash
+pixi run -e arraylake arraylake auth login
+```
+
+Then look up ERA5 once in that environment (step 4). After that, `pixi run example` works with
+`source = "earthmover"` too: its ERA5 step finds every value already saved and doesn't open Arraylake.
+
+To use local ERA5 files instead, set `[P1.era5] source = "file"` and download `era5_slp` and
+`era5_wind` (step 3).
+
 ## 2. Make your run config
 
 ```bash
@@ -44,12 +64,18 @@ In `configs/example_drake.toml`:
 - `[run] name`: a new name, e.g. `"example_drake"`. Outputs go to `<data_root>/<name>/`. The default
   `data_root = "../x_data"` is relative to the config file ('x_data' ignored by git).
 - `[region]`, `[run] years`: the area, depth range and years to download.
-- `[regression]`: what to predict and from what. The example uses
-  `target = "oxygen"` and `features = ["CT", "SA", "max_solar_rad"]`.
-  Only BGC samples whose `oxygen_qc` is in `target_qc_flags` (1, 2, 5, 8) are used for training.
+- `[regression]`: what to predict and from what. The example uses `target = "oxygen"` and
+  `features = ["pressure", "CT", "SA", "sigma0", "max_solar_rad", "wind_speed", "atmos_pres_atm"]`,
+  with `depth_resolved = true` and `pressure_levels = [0, 1000, 10]`: one row per profile and
+  pressure level, with pressure, CT, SA, sigma0 and oxygen from that level (L3) and the profile
+  values repeated on every level. Oxygen is QC'ed in L3 (`[L3] qc_masked_vars`).
 - `[P1] features`: the features the P1 step computes. It always adds the `[regression]` features and
   target; add extras you may want to try later; changing `[regression] features`
-  to one that P1 didn't compute means rerunning P1 (step 4). The example uses the same three.
+  to one that P1 didn't compute means rerunning P1 (step 4). The example lists the profile
+  features (`CT`, `SA`, `max_solar_rad`, `wind_speed`, `atmos_pres_atm`).
+- `[P1.era5]`: where the ERA5 features come from: `source = "public"` (the example: Earthmover's
+  public `bucket`, `group`, and a pinned `snapshot`, so reruns get the same values), `"earthmover"`
+  (the same data from an Arraylake `repo`, with an Earthmover login) or `"file"` (local files).
 - `[files]`: where your copies of the external inputs are (step 3).
 
 ## 3. Download the external inputs
@@ -57,8 +83,8 @@ In `configs/example_drake.toml`:
 The Argo floats are downloaded by the pipeline itself (step 4). Every run needs the bathymetry.
 The P1 step adds environmental features from gridded products, and reads only the files that its
 features (`[P1] features`, plus the `[regression] features` and `target`) need, for each run year.
-The time variables, `max_solar_rad` and `log_mld` need no external file, so the example
-(`CT`, `SA`, `max_solar_rad`) needs only the bathymetry.
+The time variables, `max_solar_rad` and `log_mld` need no external file, and the example takes its
+ERA5 features from Earthmover, so the example needs only the bathymetry.
 
 **For the example**, the bathymetry for the Drake Passage box comes with the example data
 ([argo-class-regression-data](https://github.com/song-sangmin/argo-class-regression-data), about
@@ -80,11 +106,15 @@ That subset covers only the example box, so a new region needs its own bathymetr
 | `[files]` key | Needed if | Product | Notes |
 |---|---|---|---|
 | `bathy` | always | GEBCO grid, sub-ice topography (netcdf) — https://www.gebco.net | variable `elevation`; masks out profiles shallower than 1000 m. The example uses a 2026 subset from the example data |
-| `era5_slp` | `atmos_pres_atm`, `atmos_pres_Pa`, or anything that needs `mbl_txt` | ERA5 hourly single levels, mean sea level pressure (`msl`) — Copernicus Climate Data Store | one file per year (`{yr}` in the name), dims `valid_time, latitude, longitude` |
-| `era5_wind` | `wind_speed` | ERA5 hourly single levels, 10 m u and v wind (`u10`, `v10`) | one file per year |
+| `era5_slp` | `atmos_pres_atm`, `atmos_pres_Pa`, or anything that needs `mbl_txt`; only with `[P1.era5] source = "file"` | ERA5 hourly single levels, mean sea level pressure (`msl`) — Copernicus Climate Data Store | one file per year (`{yr}` in the name), dims `valid_time, latitude, longitude` |
+| `era5_wind` | `wind_speed`; only with `[P1.era5] source = "file"` | ERA5 hourly single levels, 10 m u and v wind (`u10`, `v10`) | one file per year |
 | `adt` | `adt` | CMEMS DUACS L4 sea surface height, daily 0.125° (`cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D`), variable `adt` — Copernicus Marine | one file per year |
 | `seaice` | `sea_ice` | NSIDC sea ice concentration CDR v6, daily, southern hemisphere 25 km (`cdr_seaice_conc`) | one file per year |
 | `mbl_txt` | `atmos_co2_ppm`, `pco2_atmos`, `delta_pco2` (and SOCCOM or SOCAT data) | NOAA GML marine boundary layer CO2, surface, sine-latitude steps (text) — https://gml.noaa.gov/ccgg/GHGreference/ | must cover your years and sin(lat) −1.00 to −0.50 |
+
+With `[P1.era5] source = "public"` or `"earthmover"`, `atmos_pres_*`, `wind_speed` and `SST_era5` (ERA5 SST in °C;
+a sample on a land cell takes the nearest ocean cell within `sst_ocean_search` cells) come from
+Earthmover instead, at the nearest 0.25° grid point and hour, as with the local files.
 
 If a needed file is missing, P1 stops and names its `[files]` key. If `[regression] features` asks
 for a feature that P1 didn't compute, regression prep stops and says to add it to `[P1] features`
@@ -99,13 +129,14 @@ and rerun P1 and `apply_P2_classes.py`; the clustering fit doesn't need rerunnin
 pixi run example
 ```
 
-This downloads the example data, then runs the five stages below in order. Each stage is also a
+This downloads the example data, then runs the stages below in order. Each stage is also a
 task of its own, which takes a config (default `configs/example_drake.toml`) and, for the data
 stages, the datasets (default `"core bgc"`):
 
 | Task | Steps |
 |---|---|
 | `pixi run float-import [config] [datasets]` | L0–L3 |
+| `pixi run era5-points [config] [datasets]` | ERA5 from Earthmover at each profile (with `[P1.era5] source = "public"`; add `-e arraylake` for `"earthmover"`) |
 | `pixi run feature-addition [config] [datasets]` | P1 |
 | `pixi run clustering [config] [datasets]` | P2 fit and classify |
 | `pixi run regression-prep [config]` | regression inputs |
@@ -141,7 +172,12 @@ the gridded files it reads. With CO2 features or target (`mbl_txt` above), first
 one netcdf with `python scripts/data-processing/create_mbl_co2_dataset.py --config $C`; the
 example doesn't need it.
 
+With `[P1.era5] source = "public"` or `"earthmover"`, look up ERA5 first (for `"earthmover"`, in
+the `arraylake` environment: `pixi run -e arraylake python ...`). It writes `P1/era5_points_<dataset>.parquet`, which P1 reads; a rerun looks up only samples or
+variables that are not in it yet.
+
 ```bash
+python scripts/data-processing/create_P1_era5_points.py --config $C --datasets core bgc
 python scripts/data-processing/create_P1_float_features.py --config $C --datasets core bgc
 ```
 
@@ -157,8 +193,10 @@ python scripts/clustering/apply_P2_classes.py --config $C --datasets core bgc
 - uses the BGC floats as training data (`[regression] train`)
 - splits them into training and test years
 - removes from the core set any profiles that are also training samples
-- writes the csvs the models read: training (`combined_trainval_<pcm>.csv`), test
-  (`combined_test_<pcm>.csv`, the 2022 samples) and application
+- makes one row per profile and pressure level (0-1000 dbar, every 10 dbar)
+- writes the files the models read: training (`combined_trainval_<pcm>.csv`), test
+  (`combined_test_<pcm>.csv`, the 2018 samples) and application (`application_<pcm>.parquet`,
+  parquet because it has 101 rows per core profile)
 
 ```bash
 python scripts/regression/regression-input-prep.py --config $C
@@ -166,7 +204,7 @@ python scripts/regression/regression-input-prep.py --config $C
 
 **Model training and validation.** Nested cross-validation picks hyperparameters and estimates the error per cluster.
 The application run trains the final models on all the training data, predicts oxygen for the
-core floats, and tests the same models on the held-out 2022 samples. From `--config`, this example uses `[regression] cv_type = "profile"`, which holds out whole profiles instead of whole floats.
+core floats, and tests the same models on the held-out 2018 samples. From `--config`, this example uses `[regression] cv_type = "profile"`, which holds out whole profiles instead of whole floats.
 
 
 Run these from `scripts/model-optimization/`; the optional argument `rfr_test` is a small grid for trying things out; `rfr_full` is a more comprehensive tuning grid (edit in `tuning_grids.py`).
@@ -189,7 +227,7 @@ The application step tunes each cluster's final model on the grid given by `--al
 choice per cluster.
 
 The test set is used only to evaluate the final models, never to tune or calibrate them. Its
-results are in `crusoe_clusteredModel_application_testMetrics_acc<date>.csv` (RMSE, MAE and bias,
+results are in `example_drake_clusteredModel_application_testMetrics_acc<date>.csv` (RMSE, MAE and bias,
 overall and by cluster, uncalibrated and calibrated) and `_testPredictions_acc<date>.csv`. 
 
 
@@ -208,7 +246,8 @@ x_data/example_drake/
     provenance/          one json per script run: command, git commit, package versions, inputs, outputs
     L0/ L1-qc/ L2-mask/ L3-interp/  floats at each processing level
     ancillary/           combined MBL CO2 (only with CO2 features or target)
-    P1/                  P1_core_features.nc, P1_bgc_features.nc: one row per profile, with features
+    P1/                  P1_core_features.nc, P1_bgc_features.nc: one row per profile, with features;
+                         era5_points_<dataset>.parquet: the ERA5 values looked up on Earthmover
     P2/pc4_gmm2_dbar500/ PCM_finder (classes of every profile), P2_core / P2_bgc (P1 + class probabilities),
                          and the regression trainval and application sets
     regression/pc4_gmm2_dbar500/   csvs for model-optimization, and regression_info (features, target)

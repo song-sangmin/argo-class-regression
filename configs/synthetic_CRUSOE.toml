@@ -11,6 +11,9 @@
 # ([P1.socat]), as in southernOcean_CRUSOE_pHbias4pK014.toml. P1_socat, P2_syn_trainval and the
 # regression inputs now go to new *_max350km files and folders; the Oct 16-17 files are kept (paths
 # in the comments next to each entry).
+#
+# 2026-11-12: regression samples limited to 35-70S ([regression] lat_range), as in
+# southernOcean_CRUSOE_pHbias4pK014.toml; the P2 splits and regression inputs go to *_max350km.
 
 [run]
 name = "synthetic_CRUSOE"
@@ -50,6 +53,7 @@ ship_gapfill_days = 1.5
 
 # %% Regression inputs
 [regression]
+results_prefix = "crusoe"            # model result files crusoe_<ALGORITHM>_... (default: [run] name)
 train = ["syn_trainval"]           # the synthetic trainval file (synBgcArgo + synSOCAT, already subsampled)
 trainval_years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
 test_years = []
@@ -60,12 +64,13 @@ drop_features = ["adt"]            # no sea surface height in the model output
 target = "delta_pco2"
 ice_threshold = 0.1
 min_ice_profiles = 10
+lat_range = [-70, -35]             # keep train and application samples within this latitude band (inclusive)
 cv_type = "platform"           # model-optimization folds: "platform" (whole floats/cruises held out), "profile" (whole profiles), "kmeans" (regions)
 
 # %% Files
 [files]
 # External inputs
-syn_merged = "{data_root}/LIGHT-bgcArgo/synArgo_realworld_matches_merged.nc"        # merged synthetic float netcdf
+syn_merged = "{data_root}/LIGHT-bgcArgo/synArgo_realworld_matches_merged.nc"        # merged 2000-2023 synthetic float netcdf
 syn_socat = "{data_root}/working-vars/synthetic/synSOCAT-daily_matches_acc20261016.nc"   # PKG-synthetic-extract/extract_SOCAT.py
 real_P1_soccom = "{data_root}/working-vars/P1-processed/P1_bgcArgo_soccom5m_features_yr2014-2024_acc20261016.nc"  # SOCCOM wmoids
 real_P1_core = "{data_root}/working-vars/P1-processed/P1_coreArgo_application_features_yr2014-2023_acc20261016.nc" # core wmoids
@@ -110,6 +115,7 @@ data_root = "/global/cfs/cdirs/m4839/sangsong/github-repos/argo-class-regression
 run_dir = "/pscratch/sd/s/sangsong/argoclare_runs/synthetic_CRUSOE"
 
 [machines.nersc.files]
+# the *_max350km folders here hold the 35-70S (lat_range) inputs since 2026-11-12
 reg_trainval = "{data_root}/synthetic_max350km/combined_trainval_synthetic_{pcm}.csv"
 reg_application = "{data_root}/synthetic_max350km/coreArgo_application_synthetic_{pcm}.csv"
 reg_info = "{data_root}/synthetic_max350km/regression_info_synthetic_{pcm}.json"

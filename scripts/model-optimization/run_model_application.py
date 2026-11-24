@@ -73,7 +73,12 @@ default_savepath = '/pscratch/sd/s/sangsong/argoclare_runs/results/'
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--run-name', default='crusoe_clusteredModel_application', help='Output file prefix')
+    parser.add_argument(
+        '--run-name',
+        default=None,
+        help='Output file prefix (default: <prefix>_clusteredModel_application; prefix: [regression] '
+        'results_prefix or [run] name with --config, else crusoe)',
+    )
     parser.add_argument(
         '--n-folds',
         type=int,
@@ -167,6 +172,7 @@ def parse_args():
     if args.algorithm and args.cluster_models:
         parser.error('use --algorithm/--grid or --cluster-models, not both')
     pipeline.fill_model_args(args)
+    args.run_name = args.run_name or f'{getattr(args, "results_prefix", None) or "crusoe"}_clusteredModel_application'
     args.data = args.data or default_data
     args.application_data = args.application_data or default_application_data
     args.savepath = args.savepath or default_savepath

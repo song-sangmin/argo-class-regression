@@ -9,8 +9,16 @@
 #
 # Basic pipeline is L0 -> L1 -> L2 -> L3 (core and bgc) -> P1 float features (core and bgc) ->
 # P2 fit on core + bgc together -> P2 classes for core and bgc -> regression inputs.
-# The regression example predicts surface oxygen from the BGC floats and applies the trained
-# model to the core floats.
+# The regression example predicts oxygen from 0 to 1000 dbar (every 10 dbar) from the BGC floats
+# and applies the trained model to every level of the core floats:
+#   [L1]/[L3]    oxygen is QC'ed (bad flags set to NaN) and regridded with T/S in L3; the pH QC
+#                filter is off so floats without pH keep their oxygen
+#   [P1.era5]    wind speed and sea level pressure come from ERA5 in Earthmover's public bucket
+#                (no account needed), looked up by create_P1_era5_points.py before P1; set
+#                source = "file" to use local ERA5 files
+#   [regression] depth_resolved: one training row per profile and pressure level, with pressure,
+#                CT, SA, sigma0 and oxygen on the level and the profile values (max_solar_rad,
+#                wind_speed, atmos_pres_atm) repeated; the application set is written as parquet
 
 [run]
 name = "example_drake"
@@ -42,7 +50,7 @@ description = "Ifremer ERDDAP"
 [L1]
 use_flags = ["1", "2", "5", "8"]
 core_qc_vars = ["temperature_qc", "salinity_qc", "pressure_qc", "time_qc", "position_qc"]
-bgc_qc_vars = ["pH_qc"]            # added to core_qc_vars for bgc; oxygen_qc is kept, not filtered
+bgc_qc_vars = []                   # no pH filter (it would drop floats without pH); oxygen QC is in [L3]
 bgc_vars = ["pH", "oxygen"]
 n_jobs = 1
 
@@ -50,10 +58,11 @@ n_jobs = 1
 [L2]
 bathy_lim = -1000                  # keep profiles where GEBCO elevation < bathy_lim (m)
 
-# %% L3: regridding (create_L3_gridded_*.py)
+# %% L3: regridding (create_L3_gridded_*.py) - Adds sigma0
 [L3]
 surface_max = 25
-bgc_vars = ["pH"]
+bgc_vars = ["oxygen"]              # regridded with T/S
+qc_masked_vars = ["oxygen"]        # set to NaN where oxygen_qc is not in [L1] use_flags, before regridding
 n_jobs = 4
 
 # %% P1: regression features (create_P1_float_features.py --datasets core bgc)
@@ -64,32 +73,51 @@ n_jobs = 1
 # needs its gridded file in [files] (the time variables, max_solar_rad and log_mld need none):
 #   atmos_pres_atm, atmos_pres_Pa: era5_slp     adt: adt     wind_speed: era5_wind
 #   sea_ice: seaice     atmos_co2_ppm, pco2_atmos, delta_pco2: mbl (from mbl_txt) and era5_slp
-features = ["CT", "SA", "max_solar_rad"]
+# With [P1.era5] source = "public" or "earthmover", atmos_pres_* and wind_speed come from ERA5 on
+# Earthmover instead of era5_slp/era5_wind, and SST_era5 (ERA5 SST, deg C) can be added too.
+features = ["CT", "SA", "max_solar_rad", "wind_speed", "atmos_pres_atm"]
+
+[P1.era5]                          # create_P1_era5_points.py (pixi run era5-points)
+source = "public"                  # or "file": [files] era5_slp and era5_wind (see below)
+bucket = "earthmover-icechunk-era5"  # Earthmover's public ERA5, read anonymously
+prefix = "icechunkV2"
+region = "us-east-1"                # aws region
+# With an Earthmover account, the same data from an Arraylake repo (run with pixi -e arraylake,
+# after `pixi run -e arraylake arraylake auth login`):
+# source = "earthmover"
+# repo = "argo-class-regression/era5-subscription"   # an Arraylake repo your account can read
+group = "single/temporal"          # chunks of 8736 h x 12 x 12 cells: few reads for a small region
+snapshot = "VKGPX45BPEQJMVZZXZEG"  # pinned version of the repo, so reruns get the same values
+sst_ocean_search = 3               # SST_era5 on a land cell: nearest cell with SST within 3 cells (0.75 deg)
 
 # %% P2: clustering (clustering/fit_argo_clustering.py, clustering/apply_P2_classes.py)
 [P2]
 n_pca = 4
 n_gmm = 2
-dbar_limit = 500
+dbar_limit = 1000
 fit_datasets = ["core", "bgc"]     # L3 datasets fit together; a profid in several is taken from the first
 float_gapfill_days = 12            # unclassified float samples: same float's classes within this
 
 # %% Regression inputs (regression/regression-input-prep.py)
 [regression]
 train = ["bgc"]                    # P2 datasets combined for training
-trainval_years = [2018, 2019, 2020, 2021]
-test_years = [2022]                # held out from training (P2_test); not used by model-optimization
+trainval_years = [2019, 2020, 2021, 2022]
+test_years = [2018]                # held out from training (P2_test); not used by model-optimization.
+                                   # 2018, not 2022: the 2022 BGC profiles are all in cluster 2
 application = "core"               # P2 dataset the trained model is applied to
 exclude_training = true            # drop application profiles that are also training samples
-features = ["CT", "SA", "max_solar_rad"]
+# pressure, CT, SA and sigma0 on each level (from L3); max_solar_rad, wind_speed and
+# atmos_pres_atm are the profile's values, the same on every level
+features = ["pressure", "CT", "SA", "sigma0", "max_solar_rad", "wind_speed", "atmos_pres_atm"]
 drop_features = []
-target = "oxygen"                  # surfacemost oxygen (umol/kg); L1 keeps oxygen without QC filtering,
-target_qc_flags = [1, 2, 5, 8]     # so keep only these oxygen_qc flags for training
+target = "oxygen"                  # oxygen (umol/kg) on each pressure level; QC'ed in L3 ([L3] qc_masked_vars)
 ice_threshold = 0.1
 min_ice_profiles = 10
-cv_type = "profile"                # model-optimization folds: "platform" (whole floats/cruises held out), "profile" (whole profiles), "kmeans" (regions)
+cv_type = "profile"                # model-optimization folds: "platform" (whole floats/cruises held out), "profile" (whole profiles, all their levels), "kmeans" (regions)
 n_outer = 5                        # run_dask_nested_cv.py: outer folds (error estimate); default 10
 n_inner = 2                        # run_dask_nested_cv.py: inner folds (tuning); default 5
+depth_resolved = true              # one row per profile and pressure level (regression-input-prep.py)
+pressure_levels = [0, 1000, 10]    # start, stop, step (dbar), on the L3 grid (every 5 dbar to 1000)
 
 # %% Files
 # Pipeline outputs use the run folder layout, so only external inputs are listed here.
@@ -100,10 +128,12 @@ n_inner = 2                        # run_dask_nested_cv.py: inner folds (tuning)
 # (or git clone https://github.com/song-sangmin/argo-class-regression-data.git example-data) in the repo.
 # For another region, use the GEBCO grid (https://www.gebco.net), e.g. "{data_root}/external/GEBCO_2024_sub_ice_topo.nc".
 bathy = "../example-data/example_drake_gebco_2026_sub_ice_n-55.0_s-65.0_w-70.0_e-50.0.nc"
+# Depth-resolved application set (101 rows per core profile), as parquet instead of csv
+reg_application = "{run_dir}/regression/{pcm}/application_{pcm}.parquet"
 # Only needed for P1 features this run does not use (see [P1] above):
 # mbl_txt = ["{data_root}/external/MBL_surfaceco2_GHGreference.txt"]        # https://gml.noaa.gov/ccgg/GHGreference/
-# era5_slp = "{data_root}/external/era5/era5_mean_slp_yr{yr}.nc"            # ERA5 msl, hourly
-# era5_wind = "{data_root}/external/era5/era5_wind_speed_{yr}.nc"           # ERA5 u10, v10, hourly
+# era5_slp = "{data_root}/external/era5/era5_mean_slp_yr{yr}.nc"            # ERA5 msl, hourly ([P1.era5] source = "file")
+# era5_wind = "{data_root}/external/era5/era5_wind_speed_{yr}.nc"           # ERA5 u10, v10, hourly ([P1.era5] source = "file")
 # adt = "{data_root}/external/cmems_adt_{yr}.nc"                            # CMEMS DUACS L4 adt, daily
 # seaice = "{data_root}/external/sic_pss25_{yr}0101-{yr}1231_v06r00.nc"     # NSIDC CDR v6, daily
 # Optional ship data (create_L2_resampled_masked_socat.py, create_P1_socat_features.py):

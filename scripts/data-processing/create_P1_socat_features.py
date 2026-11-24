@@ -171,7 +171,10 @@ def add_socat_pco2(df):
 def process_year(yearDF, yr, files, ref_time, seaice_days_before=None):
     t0 = datetime.now()
     df = p1_features.add_time_vars(yearDF, ref_time)
-    df = p1_features.add_sea_level_pressure(df, yr, files['slp'])
+    if 'era5_points' in files:  # [P1.era5] source = "public" or "earthmover"
+        df = p1_features.add_era5_points(df, files['era5_points'], files['era5_names'])
+    else:
+        df = p1_features.add_sea_level_pressure(df, yr, files['slp'])
     df = add_socat_pco2(df)
     df = p1_features.add_atmospheric_co2(df, files['mbl'])
     if 'adt' in files:
@@ -202,7 +205,7 @@ def main():
     l2_file = run.input('socat_L2')
     indexes = [run.input('L3_index', 'core'), run.input('L3_index', 'bgc')]
     datas = [run.input('L3_data', 'core'), run.input('L3_data', 'bgc')]
-    files = p1_features.run_feature_files(run, years, always={'slp', 'mbl'})
+    files = p1_features.run_feature_files(run, years, always={'slp', 'mbl'}, dataset='socat')
     savefile = run.output('P1_socat')
 
     # older L2 files use datetime as the dimension, newer ones 'sample'
